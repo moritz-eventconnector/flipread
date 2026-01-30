@@ -26,14 +26,14 @@ echo "----------------------------------------"
 docker compose logs --tail=30 nginx
 echo ""
 
-echo "5. Test Backend direkt:"
+echo "5. Test Backend direkt (von Nginx Container):"
 echo "----------------------------------------"
-docker compose exec -T backend curl -f http://localhost:8000/health/ 2>&1 || echo "Backend nicht erreichbar"
+docker compose exec -T nginx wget -q -O- http://backend:8000/health/ 2>&1 || docker compose exec -T nginx wget -q -O- http://backend:8000/health/ 2>&1 || echo "Backend nicht erreichbar von Nginx"
 echo ""
 
-echo "6. Test Frontend direkt:"
+echo "6. Test Frontend direkt (von Nginx Container):"
 echo "----------------------------------------"
-docker compose exec -T frontend curl -f http://localhost:3000/health 2>&1 || echo "Frontend nicht erreichbar"
+docker compose exec -T nginx wget -q -O- http://frontend:3000/ 2>&1 | head -5 || echo "Frontend nicht erreichbar von Nginx"
 echo ""
 
 echo "7. Test von Host:"

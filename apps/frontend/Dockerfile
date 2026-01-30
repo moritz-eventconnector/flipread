@@ -48,8 +48,9 @@ USER nextjs
 
 EXPOSE 3000
 
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NODE_ENV=production
 
 # Find and run server.js
 # Next.js 14 standalone creates server.js in different locations depending on app structure
@@ -69,5 +70,8 @@ CMD sh -c 'SERVER_FILE=""; \
     exit 1; \
   fi; \
   echo "Starting Next.js server with: $SERVER_FILE"; \
-  node $SERVER_FILE'
+  echo "Environment: PORT=$PORT HOSTNAME=$HOSTNAME NODE_ENV=$NODE_ENV"; \
+  export PORT=$PORT; \
+  export HOSTNAME=$HOSTNAME; \
+  exec node $SERVER_FILE'
 
