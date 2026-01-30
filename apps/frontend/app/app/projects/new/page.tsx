@@ -38,7 +38,29 @@ export default function NewProjectPage() {
       toast.success('Projekt erstellt! Verarbeitung läuft...')
       router.push(`/app/projects/${response.data.slug}`)
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Fehler beim Erstellen des Projekts')
+      console.error('Project creation error:', error)
+      // Show detailed error message
+      if (error.response?.data) {
+        const errorData = error.response.data
+        if (typeof errorData === 'object') {
+          // Handle field-specific errors
+          const errorMessages = Object.entries(errorData)
+            .map(([field, messages]) => {
+              if (Array.isArray(messages)) {
+                return `${field}: ${messages.join(', ')}`
+              }
+              return `${field}: ${messages}`
+            })
+            .join('\n')
+          toast.error(errorMessages || 'Fehler beim Erstellen des Projekts')
+        } else if (typeof errorData === 'string') {
+          toast.error(errorData)
+        } else {
+          toast.error(error.response?.data?.error || 'Fehler beim Erstellen des Projekts')
+        }
+      } else {
+        toast.error('Fehler beim Erstellen des Projekts')
+      }
     } finally {
       setLoading(false)
     }

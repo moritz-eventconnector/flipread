@@ -12,7 +12,20 @@ from accounts.models import User
 
 def project_upload_path(instance, filename):
     """Generate upload path for project PDFs: customer-{user_id}-projekt-{token}/{filename}"""
-    return f'customer-{instance.user.id}-projekt-{secrets.token_urlsafe(8)}/{filename}'
+    # Ensure user is available (should be set by serializer before save)
+    # Django may call this before the instance is fully saved, so we need to handle both cases
+    if hasattr(instance, 'user') and instance.user and hasattr(instance.user, 'id') and instance.user.id:
+        user_id = instance.user.id
+    elif hasattr(instance, '_user_id'):
+        # Fallback: use stored user_id if available
+        user_id = instance._user_id
+    else:
+        # Last resort: use 0 (shouldn't happen in normal flow, but prevents crash)
+        user_id = 0
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"project_upload_path called without user set for filename {filename}")
+    return f'customer-{user_id}-projekt-{secrets.token_urlsafe(8)}/{filename}'
 
 
 class Project(models.Model):

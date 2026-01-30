@@ -21,12 +21,14 @@ logger = logging.getLogger(__name__)
 # Initialize Stripe - ALWAYS set the key if available
 # The api_key MUST be set before any Stripe API calls
 # Setting it to None breaks the stripe module's internal structure
+# NEVER set stripe.api_key to None - it breaks the module
 if settings.STRIPE_SECRET_KEY and len(settings.STRIPE_SECRET_KEY) > 10:
     stripe.api_key = settings.STRIPE_SECRET_KEY
     logger.info("Stripe API key configured")
 else:
     logger.warning("Stripe not configured - running in DEV mode")
-    # Don't set to None - it breaks stripe's internal module structure
+    # IMPORTANT: Do NOT set stripe.api_key to None
+    # If we need to use Stripe APIs, we must check settings first and return early
 
 
 def get_or_create_stripe_customer(user):
@@ -42,10 +44,21 @@ def get_or_create_stripe_customer(user):
         )
         return customer
     
-    # Ensure stripe.api_key is set (in case it was None)
-    if not stripe.api_key:
+    # Ensure stripe.api_key is set BEFORE any Stripe API calls
+    # This is critical - the stripe module breaks if api_key is None when APIs are called
+    if not stripe.api_key or stripe.api_key != settings.STRIPE_SECRET_KEY:
         stripe.api_key = settings.STRIPE_SECRET_KEY
         logger.info("Stripe API key set in get_or_create_stripe_customer")
+    
+    # Verify that stripe.api_key is actually set (not None)
+    if not stripe.api_key:
+        logger.error("stripe.api_key is None - cannot create Stripe customer")
+        # Return mock customer instead of crashing
+        customer, _ = StripeCustomer.objects.get_or_create(
+            user=user,
+            defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
+        )
+        return customer
     
     # Check if customer already exists
     try:
@@ -62,6 +75,15 @@ def get_or_create_stripe_customer(user):
                 user=user,
                 stripe_customer_id=customer.id
             )
+        except AttributeError as e:
+            # This happens when stripe.api_key is None and Stripe tries to access internal modules
+            logger.error(f"Stripe module error (api_key may be None): {e}", exc_info=True)
+            # Return mock customer instead of crashing
+            customer, _ = StripeCustomer.objects.get_or_create(
+                user=user,
+                defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
+            )
+            return customer
         except stripe.error.StripeError as e:
             logger.error(f"Stripe API error creating customer: {e}", exc_info=True)
             raise
@@ -193,7 +215,8 @@ def checkout_download(request):
 def checkout_hosting(request):
     """Create checkout session for hosting subscription"""
     # DEV MODE: Enable hosting directly
-    if not stripe.api_key or not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
+    # Check settings directly, not stripe.api_key (which might be None and break the module)
+    if not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
         from datetime import timedelta
         user = request.user
         user.hosting_enabled = True
@@ -231,8 +254,21 @@ def checkout_hosting(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
+    # Ensure stripe.api_key is set before calling get_or_create_stripe_customer
+    # This is critical - the stripe module breaks if api_key is None when APIs are called
+    if not stripe.api_key or stripe.api_key != settings.STRIPE_SECRET_KEY:
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        logger.info("Stripe API key set in checkout_hosting")
+    
     try:
         stripe_customer = get_or_create_stripe_customer(request.user)
+    except AttributeError as e:
+        # This happens when stripe.api_key is None and Stripe tries to access internal modules
+        logger.error(f"Stripe module error (api_key may be None): {e}", exc_info=True)
+        return Response(
+            {'error': 'Payment system error. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     except Exception as e:
         logger.error(f"Failed to get/create Stripe customer: {e}", exc_info=True)
         return Response(

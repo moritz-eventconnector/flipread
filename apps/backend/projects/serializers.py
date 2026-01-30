@@ -102,7 +102,17 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
         return value
     
     def create(self, validated_data):
-        validated_data['user'] = self.context['request'].user
+        # Set user before creating instance to ensure project_upload_path can access it
+        user = self.context['request'].user
+        validated_data['user'] = user
         validated_data['status'] = Project.Status.UPLOADING
-        return super().create(validated_data)
+        
+        # Store user_id on instance for project_upload_path fallback
+        # This ensures the upload path can be generated even if Django calls it before full save
+        instance = Project(**validated_data)
+        instance._user_id = user.id
+        
+        # Now save the instance (this will trigger project_upload_path)
+        instance.save()
+        return instance
 

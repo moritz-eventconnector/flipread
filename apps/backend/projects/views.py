@@ -63,21 +63,84 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'])
-    def download(self, request, slug=None):
-        """Download flipbook as ZIP (requires payment) - Standalone version for any webserver"""
+    def download_pdf(self, request, slug=None):
+        """Download original PDF file (requires payment)"""
         project = self.get_object()
         
-        logger.info(f"Download request for project {project.slug} by user {request.user.email}")
+        logger.info(f"PDF download request for project {project.slug} by user {request.user.email}")
         
         if project.user != request.user and not request.user.is_admin:
-            logger.warning(f"Permission denied: User {request.user.email} tried to download project {project.slug} owned by {project.user.email}")
+            logger.warning(f"Permission denied: User {request.user.email} tried to download PDF for project {project.slug} owned by {project.user.email}")
             return Response(
                 {'error': 'Permission denied'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
         if not project.can_download():
-            logger.warning(f"Download not available for project {project.slug}: download_enabled={project.download_enabled}")
+            logger.warning(f"PDF download not available for project {project.slug}: download_enabled={project.download_enabled}")
+            return Response(
+                {'error': 'Download not available. Payment required.'},
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
+        
+        if not project.pdf_file:
+            logger.error(f"PDF file not found for project {project.slug}")
+            return Response(
+                {'error': 'PDF file not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        try:
+            # Return PDF file directly
+            if settings.USE_S3:
+                # For S3, we need to read the file content
+                pdf_content = project.pdf_file.read()
+                response = FileResponse(
+                    io.BytesIO(pdf_content),
+                    as_attachment=True,
+                    filename=f"{project.slug}.pdf"
+                )
+                response['Content-Type'] = 'application/pdf'
+                return response
+            else:
+                # For local storage, use FileResponse directly
+                if os.path.exists(project.pdf_file.path):
+                    response = FileResponse(
+                        open(project.pdf_file.path, 'rb'),
+                        as_attachment=True,
+                        filename=f"{project.slug}.pdf"
+                    )
+                    response['Content-Type'] = 'application/pdf'
+                    return response
+                else:
+                    logger.error(f"PDF file not found at path: {project.pdf_file.path}")
+                    return Response(
+                        {'error': 'PDF file not found'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+        except Exception as e:
+            logger.error(f"Error serving PDF for project {project.slug}: {str(e)}", exc_info=True)
+            return Response(
+                {'error': f'Fehler beim Laden der PDF: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=True, methods=['get'])
+    def download(self, request, slug=None):
+        """Download flipbook as ZIP (requires payment) - Standalone version for any webserver"""
+        project = self.get_object()
+        
+        logger.info(f"ZIP download request for project {project.slug} by user {request.user.email}")
+        
+        if project.user != request.user and not request.user.is_admin:
+            logger.warning(f"Permission denied: User {request.user.email} tried to download ZIP for project {project.slug} owned by {project.user.email}")
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if not project.can_download():
+            logger.warning(f"ZIP download not available for project {project.slug}: download_enabled={project.download_enabled}")
             return Response(
                 {'error': 'Download not available. Payment required.'},
                 status=status.HTTP_402_PAYMENT_REQUIRED
@@ -121,20 +184,74 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     logger.warning(f"No pages_json found for project {project.slug}")
                 
                 # Add page-flip library if available
-                lib_path = os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'lib', 'page-flip.browser.js')
-                if os.path.exists(lib_path):
-                    with open(lib_path, 'rb') as f:
-                        zipf.writestr('lib/page-flip.browser.js', f.read())
-                    logger.info(f"Added page-flip library to ZIP from {lib_path}")
-                else:
-                    # Try alternative path
-                    alt_lib_path = os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'lib', 'page-flip.browser.min.js')
-                    if os.path.exists(alt_lib_path):
-                        with open(alt_lib_path, 'rb') as f:
-                            zipf.writestr('lib/page-flip.browser.js', f.read())
-                        logger.info(f"Added page-flip library to ZIP from {alt_lib_path}")
-                    else:
-                        logger.warning(f"Page-flip library not found at {lib_path} or {alt_lib_path} - ZIP will not include library")
+                # Try multiple possible paths (local development, Docker container, etc.)
+                possible_paths = [
+                    # Docker container path (if frontend volume is mounted)
+                    '/app/public/lib/page-flip.browser.js',
+                    # Local development path
+                    os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'lib', 'page-flip.browser.js'),
+                    # Alternative: try to find in node_modules (if available)
+                    os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'node_modules', 'page-flip', 'dist', 'page-flip.browser.js'),
+                    # Alternative minified version
+                    os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'node_modules', 'page-flip', 'dist', 'page-flip.browser.min.js'),
+                ]
+                
+                lib_found = False
+                for lib_path in possible_paths:
+                    if os.path.exists(lib_path):
+                        try:
+                            with open(lib_path, 'rb') as f:
+                                zipf.writestr('lib/page-flip.browser.js', f.read())
+                            logger.info(f"Added page-flip library to ZIP from {lib_path}")
+                            lib_found = True
+                            break
+                        except Exception as e:
+                            logger.warning(f"Error reading page-flip library from {lib_path}: {e}")
+                            continue
+                
+                if not lib_found:
+                    # Try alternative minified path
+                    alt_paths = [
+                        '/app/public/lib/page-flip.browser.min.js',
+                        os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'lib', 'page-flip.browser.min.js'),
+                    ]
+                    for alt_path in alt_paths:
+                        if os.path.exists(alt_path):
+                            try:
+                                with open(alt_path, 'rb') as f:
+                                    zipf.writestr('lib/page-flip.browser.js', f.read())
+                                logger.info(f"Added page-flip library to ZIP from {alt_path}")
+                                lib_found = True
+                                break
+                            except Exception as e:
+                                logger.warning(f"Error reading page-flip library from {alt_path}: {e}")
+                                continue
+                
+                # If still not found, try to download from frontend container via HTTP
+                if not lib_found:
+                    try:
+                        import urllib.request
+                        import urllib.error
+                        frontend_url = settings.SITE_URL.rstrip('/')
+                        lib_url = f"{frontend_url}/lib/page-flip.browser.js"
+                        logger.info(f"Attempting to download page-flip library from {lib_url}")
+                        with urllib.request.urlopen(lib_url, timeout=5) as response:
+                            if response.status == 200:
+                                lib_content = response.read()
+                                zipf.writestr('lib/page-flip.browser.js', lib_content)
+                                logger.info(f"Successfully downloaded page-flip library from {lib_url}")
+                                lib_found = True
+                            else:
+                                logger.warning(f"Failed to download page-flip library from {lib_url}: HTTP {response.status}")
+                    except ImportError:
+                        logger.warning("urllib not available for downloading page-flip library")
+                    except urllib.error.URLError as e:
+                        logger.warning(f"Failed to download page-flip library via HTTP (URL error): {e}")
+                    except Exception as e:
+                        logger.warning(f"Failed to download page-flip library via HTTP: {e}")
+                
+                if not lib_found:
+                    logger.warning(f"Page-flip library not found in any of the expected paths or via HTTP - ZIP will not include library. The standalone viewer will need to load the library from a CDN or external source.")
                 
                 # Create standalone index.html with embedded viewer
                 index_html = self._create_standalone_html(project)

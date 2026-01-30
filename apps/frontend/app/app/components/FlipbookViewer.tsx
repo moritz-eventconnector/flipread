@@ -238,22 +238,37 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     
     if (flipBookRef.current) {
       try {
-        const pageFlip = flipBookRef.current.getPageFlip?.()
-        if (pageFlip && typeof pageFlip.turnToPage === 'function') {
+        // Try multiple ways to access the pageFlip instance
+        let pageFlip = null
+        
+        if (flipBookRef.current.pageFlip) {
+          pageFlip = flipBookRef.current.pageFlip
+        } else if (typeof flipBookRef.current.getPageFlip === 'function') {
+          pageFlip = flipBookRef.current.getPageFlip()
+        }
+        
+        if (pageFlip && typeof pageFlip.flip === 'function') {
+          // Use flip method with page index
+          pageFlip.flip(pageIndex)
+          setCurrentPage(pageIndex)
+          const url = new URL(window.location.href)
+          url.searchParams.set('page', (pageIndex + 1).toString())
+          window.history.pushState({}, '', url.toString())
+        } else if (pageFlip && typeof pageFlip.turnToPage === 'function') {
           pageFlip.turnToPage(pageIndex)
           setCurrentPage(pageIndex)
           const url = new URL(window.location.href)
           url.searchParams.set('page', (pageIndex + 1).toString())
           window.history.pushState({}, '', url.toString())
         } else {
-          // Fallback: directly update state if pageFlip is not available
+          // Fallback: directly update state
           setCurrentPage(pageIndex)
           const url = new URL(window.location.href)
           url.searchParams.set('page', (pageIndex + 1).toString())
           window.history.pushState({}, '', url.toString())
         }
       } catch (error) {
-        console.warn('FlipbookViewer: Could not navigate to page', error)
+        console.error('FlipbookViewer: Could not navigate to page', error)
         // Fallback: directly update state
         setCurrentPage(pageIndex)
       }
@@ -264,42 +279,66 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   }
 
   const flipNext = () => {
-    if (flipBookRef.current && currentPage < totalPages - 1) {
-      try {
-        const pageFlip = flipBookRef.current.getPageFlip?.()
+    if (!flipBookRef.current || currentPage >= totalPages - 1) return
+    
+    try {
+      // react-pageflip: The ref directly exposes the pageFlip instance methods
+      if (flipBookRef.current && typeof flipBookRef.current.pageFlip === 'object') {
+        const pageFlip = flipBookRef.current.pageFlip
         if (pageFlip && typeof pageFlip.flipNext === 'function') {
           pageFlip.flipNext()
-          // Update state immediately
-          const newPage = currentPage + 1
-          setCurrentPage(newPage)
-          // Update URL
-          const url = new URL(window.location.href)
-          url.searchParams.set('page', (newPage + 1).toString())
-          window.history.pushState({}, '', url.toString())
         }
-      } catch (error) {
-        console.warn('FlipbookViewer: Could not flip next', error)
+      } else if (flipBookRef.current && typeof flipBookRef.current.flipNext === 'function') {
+        // Alternative: direct method on ref
+        flipBookRef.current.flipNext()
+      } else if (flipBookRef.current && typeof flipBookRef.current.getPageFlip === 'function') {
+        // Fallback: getPageFlip method
+        const pageFlip = flipBookRef.current.getPageFlip()
+        if (pageFlip && typeof pageFlip.flipNext === 'function') {
+          pageFlip.flipNext()
+        }
+      } else {
+        // Last resort: try to navigate programmatically
+        const newPage = Math.min(currentPage + 1, totalPages - 1)
+        goToPage(newPage)
       }
+    } catch (error) {
+      console.error('FlipbookViewer: Error flipping next', error)
+      // Fallback: navigate directly
+      const newPage = Math.min(currentPage + 1, totalPages - 1)
+      goToPage(newPage)
     }
   }
 
   const flipPrev = () => {
-    if (flipBookRef.current && currentPage > 0) {
-      try {
-        const pageFlip = flipBookRef.current.getPageFlip?.()
+    if (!flipBookRef.current || currentPage <= 0) return
+    
+    try {
+      // react-pageflip: The ref directly exposes the pageFlip instance methods
+      if (flipBookRef.current && typeof flipBookRef.current.pageFlip === 'object') {
+        const pageFlip = flipBookRef.current.pageFlip
         if (pageFlip && typeof pageFlip.flipPrev === 'function') {
           pageFlip.flipPrev()
-          // Update state immediately
-          const newPage = currentPage - 1
-          setCurrentPage(newPage)
-          // Update URL
-          const url = new URL(window.location.href)
-          url.searchParams.set('page', (newPage + 1).toString())
-          window.history.pushState({}, '', url.toString())
         }
-      } catch (error) {
-        console.warn('FlipbookViewer: Could not flip prev', error)
+      } else if (flipBookRef.current && typeof flipBookRef.current.flipPrev === 'function') {
+        // Alternative: direct method on ref
+        flipBookRef.current.flipPrev()
+      } else if (flipBookRef.current && typeof flipBookRef.current.getPageFlip === 'function') {
+        // Fallback: getPageFlip method
+        const pageFlip = flipBookRef.current.getPageFlip()
+        if (pageFlip && typeof pageFlip.flipPrev === 'function') {
+          pageFlip.flipPrev()
+        }
+      } else {
+        // Last resort: try to navigate programmatically
+        const newPage = Math.max(currentPage - 1, 0)
+        goToPage(newPage)
       }
+    } catch (error) {
+      console.error('FlipbookViewer: Error flipping prev', error)
+      // Fallback: navigate directly
+      const newPage = Math.max(currentPage - 1, 0)
+      goToPage(newPage)
     }
   }
 
@@ -324,18 +363,19 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     setDownloading(true)
     try {
-      const response = await api.get(`/projects/${project.slug}/download/`, {
+      // Download the original PDF file
+      const response = await api.get(`/projects/${project.slug}/download_pdf/`, {
         responseType: 'blob',
       })
-      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', `${project.slug}.zip`)
+      link.setAttribute('download', `${project.slug}.pdf`)
       document.body.appendChild(link)
       link.click()
       link.remove()
       window.URL.revokeObjectURL(url)
-      toast.success('Download gestartet')
+      toast.success('PDF-Download gestartet')
     } catch (error: any) {
       if (error.response?.status === 402) {
         // Payment required - redirect to purchase page
@@ -553,12 +593,17 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             overflow: 'hidden',
             backgroundImage: `url(${imageUrls[currentPage]})`,
             backgroundRepeat: 'no-repeat',
-            // The background size should be the zoom level * magnifier zoom
-            // This makes the image appear larger in the magnifier
-            backgroundSize: `${zoom * magnifierZoom * 100}%`,
-            // Background position: center the magnified area on the mouse position
-            // We need to adjust the position so the zoomed area aligns correctly
-            // The position is calculated as: (mouse position / image size) * 100%
+            // Calculate background size: image should be magnified by magnifierZoom factor
+            // backgroundSize in %: 100% = original size, 50% = 2x zoom, 33% = 3x zoom
+            // For a 2x zoom, we want the image to be 50% of its original size in the lens
+            backgroundSize: `${100 / magnifierZoom}%`,
+            // Background position: Center the magnified area on the mouse position
+            // The position needs to be adjusted to account for the lens size
+            // When backgroundSize is 50% (2x zoom), we need to offset by half the lens size
+            // Formula: position = mousePosition% - (lensSize / (imageSize * zoomFactor) * 100
+            // For a 200px lens with 2x zoom on an 800px image:
+            // offset = (200 / (800 * 2)) * 100 = 12.5%
+            // So position = mouseX% - 12.5%
             backgroundPosition: `${magnifierPosition.x}% ${magnifierPosition.y}%`,
             display: 'block',
             left: `${magnifierPosition.mouseX - 100}px`,
@@ -576,9 +621,30 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         className="flex-1 flex items-center justify-center pt-16 pb-24 px-4 overflow-hidden"
         onMouseMove={(e) => {
           if (magnifierActive && imageUrls[currentPage]) {
-            // Find the actual page image element
-            const pageImages = document.querySelectorAll('.flipbook-container img')
-            const currentPageImg = pageImages[currentPage] as HTMLImageElement
+            // Find the actual page image element within the flipbook
+            const flipbookContainer = document.querySelector('.flipbook-container')
+            if (!flipbookContainer) return
+            
+            // Try to find the current page's image
+            const pageElements = flipbookContainer.querySelectorAll('.page img, .page-content img, img')
+            let currentPageImg: HTMLImageElement | null = null
+            
+            // Get the visible page image (react-pageflip shows two pages at a time)
+            for (let i = 0; i < pageElements.length; i++) {
+              const img = pageElements[i] as HTMLImageElement
+              const rect = img.getBoundingClientRect()
+              // Check if mouse is over this image
+              if (e.clientX >= rect.left && e.clientX <= rect.right && 
+                  e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                currentPageImg = img
+                break
+              }
+            }
+            
+            // Fallback: use first visible image if none found
+            if (!currentPageImg && pageElements.length > 0) {
+              currentPageImg = pageElements[0] as HTMLImageElement
+            }
             
             if (currentPageImg) {
               const imgRect = currentPageImg.getBoundingClientRect()

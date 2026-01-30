@@ -27,8 +27,16 @@ def process_pdf_task(project_id):
         os.makedirs(pages_dir, exist_ok=True)
         
         # Convert PDF to images using pdftoppm
-        pdf_path = project.pdf_file.path
-        output_prefix = os.path.join(pages_dir, 'page')
+        if settings.USE_S3:
+            # For S3, download PDF to temp file first
+            pdf_content = project.pdf_file.read()
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_pdf:
+                tmp_pdf.write(pdf_content)
+                pdf_path = tmp_pdf.name
+        else:
+            pdf_path = project.pdf_file.path
+        
+        output_prefix = os.path.join(pages_dir, 'pdf-page')
         
         # Run pdftoppm
         result = subprocess.run(
@@ -37,25 +45,212 @@ def process_pdf_task(project_id):
             text=True
         )
         
+        # Clean up temp PDF file if we created one
+        if settings.USE_S3 and os.path.exists(pdf_path):
+            try:
+                os.unlink(pdf_path)
+            except:
+                pass
+        
         if result.returncode != 0:
             raise Exception(f"pdftoppm failed: {result.stderr}")
         
-        # Find generated images
-        page_files = sorted([f for f in os.listdir(pages_dir) if f.endswith('.jpg')])
-        total_pages = len(page_files)
+        # Find generated images (from pdftoppm)
+        # pdftoppm creates files like: pdf-page-001.jpg, pdf-page-002.jpg, etc.
+        page_files = sorted([f for f in os.listdir(pages_dir) if f.startswith('pdf-page') and f.endswith('.jpg')])
         
-        if total_pages == 0:
+        # If no files with 'pdf-page' prefix, try 'page' prefix (fallback)
+        if not page_files:
+            page_files = sorted([f for f in os.listdir(pages_dir) if f.startswith('page') and f.endswith('.jpg')])
+        pdf_page_count = len(page_files)
+        
+        if pdf_page_count == 0:
             raise Exception("No pages generated")
         
-        # Create ProjectPage objects and collect metadata
+        # Analyze pages to detect landscape orientation and split if needed
+        # Strategy:
+        # 1. First page (cover) is always treated as one page, even if landscape
+        # 2. Pages 2+ that are landscape (width > height) are split into 2 pages (left and right)
+        
         pages_data = []
-        for idx, page_file in enumerate(page_files, start=1):
+        flipbook_page_number = 1
+        
+        for pdf_page_idx, page_file in enumerate(page_files, start=1):
             page_path = os.path.join(pages_dir, page_file)
             
             # Get image dimensions
             with Image.open(page_path) as img:
                 width, height = img.size
+                aspect_ratio = width / height if height > 0 else 1
             
+            is_cover = (pdf_page_idx == 1)
+            is_landscape = aspect_ratio > 1.2  # Threshold: width is 20% larger than height
+            
+            if is_cover:
+                # Cover is always one page, even if landscape
+                # Upload as single page
+                image_file_path = f'projects/{project.user.id}/{project.id}/pages/page-{flipbook_page_number:03d}.jpg'
+                if settings.USE_S3:
+                    with open(page_path, 'rb') as f:
+                        file_content = f.read()
+                        project_page = ProjectPage(
+                            project=project,
+                            page_number=flipbook_page_number,
+                            width=width,
+                            height=height
+                        )
+                        project_page.image_file.save(f'page-{flipbook_page_number:03d}.jpg', ContentFile(file_content), save=False)
+                        project_page.save()
+                else:
+                    # For local storage, copy to new filename
+                    new_page_path = os.path.join(pages_dir, f'page-{flipbook_page_number:03d}.jpg')
+                    import shutil
+                    shutil.copy2(page_path, new_page_path)
+                    project_page = ProjectPage.objects.create(
+                        project=project,
+                        page_number=flipbook_page_number,
+                        image_file=image_file_path,
+                        width=width,
+                        height=height
+                    )
+                
+                pages_data.append({
+                    'page_number': flipbook_page_number,
+                    'file': f'page-{flipbook_page_number:03d}.jpg',
+                    'width': width,
+                    'height': height
+                })
+                flipbook_page_number += 1
+                
+            elif is_landscape:
+                # Landscape pages (except cover) are split into 2 pages
+                # Left half and right half
+                with Image.open(page_path) as img:
+                    # Split into left and right halves
+                    left_half = img.crop((0, 0, width // 2, height))
+                    right_half = img.crop((width // 2, 0, width, height))
+                    
+                    # Save left half
+                    left_filename = f'page-{flipbook_page_number:03d}.jpg'
+                    left_path = os.path.join(pages_dir, left_filename)
+                    left_half.save(left_path, 'JPEG', quality=95)
+                    
+                    # Save right half
+                    right_filename = f'page-{flipbook_page_number + 1:03d}.jpg'
+                    right_path = os.path.join(pages_dir, right_filename)
+                    right_half.save(right_path, 'JPEG', quality=95)
+                
+                # Upload left half
+                left_width = width // 2
+                left_height = height
+                image_file_path_left = f'projects/{project.user.id}/{project.id}/pages/{left_filename}'
+                if settings.USE_S3:
+                    with open(left_path, 'rb') as f:
+                        file_content = f.read()
+                        project_page = ProjectPage(
+                            project=project,
+                            page_number=flipbook_page_number,
+                            width=left_width,
+                            height=left_height
+                        )
+                        project_page.image_file.save(left_filename, ContentFile(file_content), save=False)
+                        project_page.save()
+                else:
+                    project_page = ProjectPage.objects.create(
+                        project=project,
+                        page_number=flipbook_page_number,
+                        image_file=image_file_path_left,
+                        width=left_width,
+                        height=left_height
+                    )
+                
+                pages_data.append({
+                    'page_number': flipbook_page_number,
+                    'file': left_filename,
+                    'width': left_width,
+                    'height': left_height
+                })
+                flipbook_page_number += 1
+                
+                # Upload right half
+                right_width = width - (width // 2)
+                right_height = height
+                image_file_path_right = f'projects/{project.user.id}/{project.id}/pages/{right_filename}'
+                if settings.USE_S3:
+                    with open(right_path, 'rb') as f:
+                        file_content = f.read()
+                        project_page = ProjectPage(
+                            project=project,
+                            page_number=flipbook_page_number,
+                            width=right_width,
+                            height=right_height
+                        )
+                        project_page.image_file.save(right_filename, ContentFile(file_content), save=False)
+                        project_page.save()
+                else:
+                    project_page = ProjectPage.objects.create(
+                        project=project,
+                        page_number=flipbook_page_number,
+                        image_file=image_file_path_right,
+                        width=right_width,
+                        height=right_height
+                    )
+                
+                pages_data.append({
+                    'page_number': flipbook_page_number,
+                    'file': right_filename,
+                    'width': right_width,
+                    'height': right_height
+                })
+                flipbook_page_number += 1
+                
+            else:
+                # Portrait page - use as is
+                image_file_path = f'projects/{project.user.id}/{project.id}/pages/page-{flipbook_page_number:03d}.jpg'
+                if settings.USE_S3:
+                    with open(page_path, 'rb') as f:
+                        file_content = f.read()
+                        project_page = ProjectPage(
+                            project=project,
+                            page_number=flipbook_page_number,
+                            width=width,
+                            height=height
+                        )
+                        project_page.image_file.save(f'page-{flipbook_page_number:03d}.jpg', ContentFile(file_content), save=False)
+                        project_page.save()
+                else:
+                    # For local storage, copy to new filename
+                    new_page_path = os.path.join(pages_dir, f'page-{flipbook_page_number:03d}.jpg')
+                    import shutil
+                    shutil.copy2(page_path, new_page_path)
+                    project_page = ProjectPage.objects.create(
+                        project=project,
+                        page_number=flipbook_page_number,
+                        image_file=image_file_path,
+                        width=width,
+                        height=height
+                    )
+                
+                pages_data.append({
+                    'page_number': flipbook_page_number,
+                    'file': f'page-{flipbook_page_number:03d}.jpg',
+                    'width': width,
+                    'height': height
+                })
+                flipbook_page_number += 1
+        
+        # Total pages is now the flipbook page count (may be more than PDF pages if landscape pages were split)
+        total_pages = flipbook_page_number - 1
+        
+        # Clean up original PDF page files (they've been renamed or split)
+        for page_file in page_files:
+            original_path = os.path.join(pages_dir, page_file)
+            if os.path.exists(original_path):
+                # Delete original PDF page files (pdftoppm output)
+                try:
+                    os.remove(original_path)
+                except:
+                    pass
             # Upload to storage (local or S3)
             image_file_path = f'projects/{project.user.id}/{project.id}/pages/{page_file}'
             if settings.USE_S3:
