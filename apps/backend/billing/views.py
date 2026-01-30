@@ -39,14 +39,21 @@ def get_or_create_stripe_customer(user):
     try:
         return user.stripe_customer
     except StripeCustomer.DoesNotExist:
-        customer = stripe.Customer.create(
-            email=user.email,
-            metadata={'user_id': user.id}
-        )
-        return StripeCustomer.objects.create(
-            user=user,
-            stripe_customer_id=customer.id
-        )
+        try:
+            customer = stripe.Customer.create(
+                email=user.email,
+                metadata={'user_id': user.id}
+            )
+            return StripeCustomer.objects.create(
+                user=user,
+                stripe_customer_id=customer.id
+            )
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe API error creating customer: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error creating Stripe customer: {e}", exc_info=True)
+            raise
 
 
 @api_view(['POST'])
@@ -98,26 +105,61 @@ def checkout_download(request):
             'checkout_url': f"{settings.SITE_URL}/app/projects/{project.slug}?payment=success"
         })
     
+    # Validate Stripe configuration
+    if not settings.STRIPE_SECRET_KEY:
+        logger.error("STRIPE_SECRET_KEY not configured")
+        return Response(
+            {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    if not settings.STRIPE_DOWNLOAD_PRICE_ID:
+        logger.error("STRIPE_DOWNLOAD_PRICE_ID not configured")
+        return Response(
+            {'error': 'Download price not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
     # Get or create Stripe customer
-    stripe_customer = get_or_create_stripe_customer(request.user)
+    try:
+        stripe_customer = get_or_create_stripe_customer(request.user)
+    except Exception as e:
+        logger.error(f"Failed to get/create Stripe customer: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to create payment session: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
     # Create checkout session
-    checkout_session = stripe.checkout.Session.create(
-        customer=stripe_customer.stripe_customer_id,
-        payment_method_types=['card'],
-        line_items=[{
-            'price': settings.STRIPE_DOWNLOAD_PRICE_ID,
-            'quantity': 1,
-        }],
-        mode='payment',
-        success_url=f"{settings.SITE_URL}/app/projects/{project.slug}?payment=success",
-        cancel_url=f"{settings.SITE_URL}/app/projects/{project.slug}?payment=canceled",
-        metadata={
-            'user_id': request.user.id,
-            'project_id': project.id,
-            'payment_type': 'download'
-        }
-    )
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            customer=stripe_customer.stripe_customer_id,
+            payment_method_types=['card'],
+            line_items=[{
+                'price': settings.STRIPE_DOWNLOAD_PRICE_ID,
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=f"{settings.SITE_URL}/app/projects/{project.slug}?payment=success",
+            cancel_url=f"{settings.SITE_URL}/app/projects/{project.slug}?payment=canceled",
+            metadata={
+                'user_id': request.user.id,
+                'project_id': project.id,
+                'payment_type': 'download'
+            }
+        )
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe API error creating checkout session: {e}", exc_info=True)
+        return Response(
+            {'error': f'Payment system error: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error creating checkout session: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to create payment session: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
     # Create payment record
     Payment.objects.create(
@@ -165,8 +207,30 @@ def checkout_hosting(request):
             'checkout_url': f"{settings.SITE_URL}/app/dashboard?subscription=success"
         })
     
+    # Validate Stripe configuration
+    if not settings.STRIPE_SECRET_KEY:
+        logger.error("STRIPE_SECRET_KEY not configured")
+        return Response(
+            {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    if not settings.STRIPE_HOSTING_PRICE_ID:
+        logger.error("STRIPE_HOSTING_PRICE_ID not configured")
+        return Response(
+            {'error': 'Hosting price not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
     # Get or create Stripe customer
-    stripe_customer = get_or_create_stripe_customer(request.user)
+    try:
+        stripe_customer = get_or_create_stripe_customer(request.user)
+    except Exception as e:
+        logger.error(f"Failed to get/create Stripe customer: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to create payment session: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
     # Check if user already has active subscription
     try:
@@ -180,21 +244,34 @@ def checkout_hosting(request):
         pass
     
     # Create checkout session
-    checkout_session = stripe.checkout.Session.create(
-        customer=stripe_customer.stripe_customer_id,
-        payment_method_types=['card'],
-        line_items=[{
-            'price': settings.STRIPE_HOSTING_PRICE_ID,
-            'quantity': 1,
-        }],
-        mode='subscription',
-        success_url=f"{settings.SITE_URL}/app/dashboard?subscription=success",
-        cancel_url=f"{settings.SITE_URL}/app/dashboard?subscription=canceled",
-        metadata={
-            'user_id': request.user.id,
-            'payment_type': 'hosting'
-        }
-    )
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            customer=stripe_customer.stripe_customer_id,
+            payment_method_types=['card'],
+            line_items=[{
+                'price': settings.STRIPE_HOSTING_PRICE_ID,
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=f"{settings.SITE_URL}/app/dashboard?subscription=success",
+            cancel_url=f"{settings.SITE_URL}/app/dashboard?subscription=canceled",
+            metadata={
+                'user_id': request.user.id,
+                'payment_type': 'hosting'
+            }
+        )
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe API error creating checkout session: {e}", exc_info=True)
+        return Response(
+            {'error': f'Payment system error: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error creating checkout session: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to create payment session: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
     return Response({
         'checkout_url': checkout_session.url,
@@ -213,12 +290,40 @@ def billing_portal(request):
             'message': 'DEV MODE: Billing portal not available'
         })
     
-    stripe_customer = get_or_create_stripe_customer(request.user)
+    # Validate Stripe configuration
+    if not settings.STRIPE_SECRET_KEY:
+        logger.error("STRIPE_SECRET_KEY not configured")
+        return Response(
+            {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
-    portal_session = stripe.billing_portal.Session.create(
-        customer=stripe_customer.stripe_customer_id,
-        return_url=f"{settings.SITE_URL}/app/dashboard",
-    )
+    try:
+        stripe_customer = get_or_create_stripe_customer(request.user)
+    except Exception as e:
+        logger.error(f"Failed to get/create Stripe customer: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to access billing portal: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    try:
+        portal_session = stripe.billing_portal.Session.create(
+            customer=stripe_customer.stripe_customer_id,
+            return_url=f"{settings.SITE_URL}/app/dashboard",
+        )
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe API error creating billing portal session: {e}", exc_info=True)
+        return Response(
+            {'error': f'Payment system error: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error creating billing portal session: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to access billing portal: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
     return Response({
         'portal_url': portal_session.url
