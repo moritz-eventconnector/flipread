@@ -8,6 +8,8 @@ import os
 import zipfile
 import shutil
 import secrets
+import io
+import tempfile
 
 from .models import Project, ProjectPage
 from .serializers import ProjectSerializer, ProjectCreateSerializer
@@ -74,27 +76,40 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
         
-        # Create ZIP file
-        zip_path = os.path.join(settings.MEDIA_ROOT, 'downloads', f"{project.slug}.zip")
-        os.makedirs(os.path.dirname(zip_path), exist_ok=True)
+        # Create ZIP in memory
+        zip_buffer = io.BytesIO()
         
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
             # Add pages
-            pages_dir = project.pages_directory
-            if os.path.exists(pages_dir):
-                for page in project.pages.all().order_by('page_number'):
-                    if page.image_file and os.path.exists(page.image_file.path):
+            for page in project.pages.all().order_by('page_number'):
+                if page.image_file:
+                    try:
+                        if settings.USE_S3:
+                            # Read from S3
+                            image_content = page.image_file.read()
+                        else:
+                            # Read from local filesystem
+                            if os.path.exists(page.image_file.path):
+                                with open(page.image_file.path, 'rb') as f:
+                                    image_content = f.read()
+                            else:
+                                continue
+                        
                         arcname = f"pages/page-{page.page_number:03d}.jpg"
-                        zipf.write(page.image_file.path, arcname)
+                        zipf.writestr(arcname, image_content)
+                    except Exception as e:
+                        # Skip page if can't read
+                        continue
             
             # Add pages.json
             if project.pages_json:
                 import json
                 zipf.writestr('pages.json', json.dumps(project.pages_json, indent=2))
         
-        # Use context manager for file response
+        # Return ZIP file
+        zip_buffer.seek(0)
         response = FileResponse(
-            open(zip_path, 'rb'),
+            zip_buffer,
             as_attachment=True,
             filename=f"{project.slug}.zip"
         )
@@ -124,8 +139,29 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
         
-        # Generate published slug if not exists
-        if not project.published_slug:
+        # Get custom published_slug from request or generate one
+        custom_slug = request.data.get('published_slug', '').strip()
+        if custom_slug:
+            # Validate custom slug
+            import re
+            if not re.match(r'^[a-z0-9]+(?:-[a-z0-9]+)*$', custom_slug):
+                return Response(
+                    {'error': 'Published URL darf nur Kleinbuchstaben, Zahlen und Bindestriche enthalten.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if len(custom_slug) < 3:
+                return Response(
+                    {'error': 'Published URL muss mindestens 3 Zeichen lang sein.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if Project.objects.filter(published_slug=custom_slug).exclude(id=project.id).exists():
+                return Response(
+                    {'error': 'Diese URL ist bereits vergeben. Bitte wählen Sie eine andere.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            project.published_slug = custom_slug
+        elif not project.published_slug:
+            # Generate published slug if not exists and no custom slug provided
             project.published_slug = f"{project.slug}-{secrets.token_urlsafe(8)}"
         
         # Generate published version
@@ -136,7 +172,81 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project.published_at = timezone.now()
         project.save()
         
-        serializer = self.get_serializer(project)
+        serializer = self.get_serializer(project, context={'request': request})
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['patch', 'put'])
+    def update_published_slug(self, request, slug=None):
+        """Update published_slug for a published project"""
+        project = self.get_object()
+        
+        if project.user != request.user and not request.user.is_admin:
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if not project.is_published:
+            return Response(
+                {'error': 'Project is not published'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        new_slug = request.data.get('published_slug', '').strip()
+        if not new_slug:
+            return Response(
+                {'error': 'published_slug is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate slug format
+        import re
+        if not re.match(r'^[a-z0-9]+(?:-[a-z0-9]+)*$', new_slug):
+            return Response(
+                {'error': 'Published URL darf nur Kleinbuchstaben, Zahlen und Bindestriche enthalten.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(new_slug) < 3:
+            return Response(
+                {'error': 'Published URL muss mindestens 3 Zeichen lang sein.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(new_slug) > 255:
+            return Response(
+                {'error': 'Published URL darf maximal 255 Zeichen lang sein.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check uniqueness
+        if Project.objects.filter(published_slug=new_slug).exclude(id=project.id).exists():
+            return Response(
+                {'error': 'Diese URL ist bereits vergeben. Bitte wählen Sie eine andere.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update published_slug
+        old_slug = project.published_slug
+        project.published_slug = new_slug
+        project.save()
+        
+        # Rename published directory if it exists (local only)
+        if not settings.USE_S3 and old_slug and project.published_directory:
+            old_dir = os.path.join(settings.PUBLISHED_ROOT, old_slug)
+            new_dir = os.path.join(settings.PUBLISHED_ROOT, new_slug)
+            if os.path.exists(old_dir) and not os.path.exists(new_dir):
+                os.rename(old_dir, new_dir)
+        elif settings.USE_S3 and old_slug:
+            # For S3, we need to copy files from old path to new path
+            from .storage import PublishedStorage
+            storage = PublishedStorage()
+            # Note: S3 doesn't support rename, so we'd need to copy and delete
+            # For now, we'll just republish with the new slug
+            from .tasks import publish_flipbook_task
+            publish_flipbook_task.delay(project.id)
+        
+        serializer = self.get_serializer(project, context={'request': request})
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
@@ -154,7 +264,19 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project.save()
         
         # Optionally delete published files
-        if project.published_directory and os.path.exists(project.published_directory):
+        if settings.USE_S3:
+            # Delete from S3
+            from .storage import PublishedStorage
+            storage = PublishedStorage()
+            if project.published_slug:
+                # List and delete all files with this prefix
+                try:
+                    # S3 doesn't have a simple "delete directory" - we need to list and delete
+                    # For now, we'll just mark as unpublished. Files can be cleaned up later.
+                    pass
+                except Exception:
+                    pass
+        elif project.published_directory and os.path.exists(project.published_directory):
             shutil.rmtree(project.published_directory)
         
         serializer = self.get_serializer(project)

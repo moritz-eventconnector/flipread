@@ -18,7 +18,8 @@ from .serializers import (
     UserSerializer, RegisterSerializer,
     PasswordResetRequestSerializer, PasswordResetConfirmSerializer
 )
-from .models import PasswordResetToken
+from .models import PasswordResetToken, LoginCode, EmailVerificationToken
+from django.template.loader import render_to_string
 
 User = get_user_model()
 
@@ -44,13 +45,42 @@ class RegisterView(generics.CreateAPIView):
         # Email verification if enabled
         if settings.ENABLE_EMAIL_VERIFICATION:
             token = secrets.token_urlsafe(32)
-            user.email_verification_token = token
-            user.save()
+            expires_at = timezone.now() + timedelta(hours=24)
+            
+            # Create verification token
+            EmailVerificationToken.objects.create(
+                user=user,
+                token=token,
+                expires_at=expires_at
+            )
             
             verification_url = f"{settings.SITE_URL}/app/verify-email?token={token}"
+            
+            # Render HTML email template
+            html_message = render_to_string('emails/email_verification.html', {
+                'verification_url': verification_url,
+                'current_year': timezone.now().year,
+            })
+            
+            plain_message = f"""Hallo,
+
+vielen Dank für Ihre Registrierung bei FlipRead!
+
+Bitte klicken Sie auf den folgenden Link, um Ihre Email-Adresse zu verifizieren:
+{verification_url}
+
+Dieser Link ist 24 Stunden gültig.
+
+Falls Sie sich nicht registriert haben, können Sie diese Email ignorieren.
+
+Mit freundlichen Grüßen,
+Ihr FlipRead Team
+"""
+            
             send_mail(
                 subject='Email-Verifizierung - FlipRead',
-                message=f'Bitte klicken Sie auf diesen Link zur Verifizierung: {verification_url}',
+                message=plain_message,
+                html_message=html_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
                 fail_silently=False,
@@ -72,12 +102,13 @@ class RegisterView(generics.CreateAPIView):
 
 
 class LoginView(generics.GenericAPIView):
-    """Login view - AUTHENTIK READY (kann durch OAuth/OIDC ersetzt werden)"""
+    """Login view with 2FA - AUTHENTIK READY (kann durch OAuth/OIDC ersetzt werden)"""
     permission_classes = [permissions.AllowAny]
     
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
+        code = request.data.get('code')  # 2FA code
         
         if not email or not password:
             return Response(
@@ -105,20 +136,83 @@ class LoginView(generics.GenericAPIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Update last login
-        user.last_login = timezone.now()
-        user.save(update_fields=['last_login'])
+        # If code is provided, verify it
+        if code:
+            try:
+                login_code = LoginCode.objects.get(
+                    user=user,
+                    code=code,
+                    used=False,
+                    expires_at__gt=timezone.now()
+                )
+                login_code.used = True
+                login_code.save()
+            except LoginCode.DoesNotExist:
+                return Response(
+                    {'error': 'Invalid or expired code'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Code verified, generate tokens
+            user.last_login = timezone.now()
+            user.save(update_fields=['last_login'])
+            
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'user': UserSerializer(user).data,
+                'tokens': {
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                }
+            })
         
-        # Generate tokens
-        refresh = RefreshToken.for_user(user)
+        # No code provided, send 2FA code via email
+        # Invalidate old codes
+        LoginCode.objects.filter(user=user, used=False).update(used=True)
+        
+        # Generate new code (expires_at will be set to 15 minutes by model's save method)
+        login_code = LoginCode.objects.create(
+            user=user,
+            code=LoginCode.generate_code(),
+            ip_address=request.META.get('REMOTE_ADDR')
+        )
+        
+        # Render HTML email template
+        html_message = render_to_string('emails/login_code.html', {
+            'code': login_code.code,
+            'current_year': timezone.now().year,
+        })
+        
+        plain_message = f"""Hallo,
+
+Sie haben versucht, sich bei FlipRead anzumelden.
+
+Ihr Anmelde-Code lautet: {login_code.code}
+
+Geben Sie diesen 6-stelligen Code auf der Anmeldeseite ein.
+
+Dieser Code ist 15 Minuten gültig.
+
+Falls Sie sich nicht angemeldet haben, ignorieren Sie diese Email bitte.
+
+Mit freundlichen Grüßen,
+Ihr FlipRead Team
+"""
+        
+        send_mail(
+            subject='Ihr Anmelde-Code - FlipRead',
+            message=plain_message,
+            html_message=html_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
         
         return Response({
-            'user': UserSerializer(user).data,
-            'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            }
-        })
+            'message': 'Login code sent to email',
+            'requires_code': True
+        }, status=status.HTTP_200_OK)
 
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
@@ -218,14 +312,87 @@ class EmailVerificationView(generics.GenericAPIView):
             )
         
         try:
-            user = User.objects.get(email_verification_token=token)
+            verification_token = EmailVerificationToken.objects.get(
+                token=token,
+                used=False,
+                expires_at__gt=timezone.now()
+            )
+            user = verification_token.user
             user.is_email_verified = True
-            user.email_verification_token = None
             user.save()
+            
+            # Mark token as used
+            verification_token.used = True
+            verification_token.save()
+            
             return Response({'message': 'Email verified successfully.'})
-        except User.DoesNotExist:
+        except EmailVerificationToken.DoesNotExist:
             return Response(
-                {'error': 'Invalid token'},
+                {'error': 'Invalid or expired token'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+class ResendVerificationView(generics.GenericAPIView):
+    """Resend email verification"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        
+        # Check if already verified
+        if user.is_email_verified:
+            return Response(
+                {'error': 'Email is already verified'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Generate new token (24 hours validity)
+        token = secrets.token_urlsafe(32)
+        expires_at = timezone.now() + timedelta(hours=24)
+        
+        # Invalidate old tokens
+        EmailVerificationToken.objects.filter(user=user, used=False).update(used=True)
+        
+        # Create new verification token
+        EmailVerificationToken.objects.create(
+            user=user,
+            token=token,
+            expires_at=expires_at
+        )
+        
+        # Send verification email
+        verification_url = f"{settings.SITE_URL}/app/verify-email?token={token}"
+        
+        # Render HTML email template
+        html_message = render_to_string('emails/email_verification.html', {
+            'verification_url': verification_url,
+            'current_year': timezone.now().year,
+        })
+        
+        plain_message = f"""Hallo,
+
+vielen Dank für Ihre Registrierung bei FlipRead!
+
+Bitte klicken Sie auf den folgenden Link, um Ihre Email-Adresse zu verifizieren:
+{verification_url}
+
+Dieser Link ist 24 Stunden gültig.
+
+Falls Sie sich nicht registriert haben, können Sie diese Email ignorieren.
+
+Mit freundlichen Grüßen,
+Ihr FlipRead Team
+"""
+        
+        send_mail(
+            subject='Email-Verifizierung - FlipRead',
+            message=plain_message,
+            html_message=html_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+        
+        return Response({'message': 'Verification email sent successfully.'})
 

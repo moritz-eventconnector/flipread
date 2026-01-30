@@ -77,6 +77,30 @@ else
     read -p "Stripe Hosting Price ID: " STRIPE_HOSTING_PRICE_ID
 fi
 
+# Ask about S3 Storage
+echo ""
+echo "S3 Storage (optional - empfohlen für Produktion):"
+read -p "S3 Storage verwenden? (j/n) [n]: " USE_S3_INPUT
+USE_S3_INPUT=${USE_S3_INPUT:-n}
+
+if [[ "$USE_S3_INPUT" =~ ^[jJ] ]]; then
+    USE_S3="True"
+    read -p "AWS Access Key ID: " AWS_ACCESS_KEY_ID
+    read -sp "AWS Secret Access Key: " AWS_SECRET_ACCESS_KEY
+    echo ""
+    read -p "AWS Storage Bucket Name: " AWS_STORAGE_BUCKET_NAME
+    read -p "AWS S3 Region Name [eu-central-1]: " AWS_S3_REGION_NAME
+    AWS_S3_REGION_NAME=${AWS_S3_REGION_NAME:-eu-central-1}
+    read -p "AWS S3 Custom Domain (optional, z.B. CDN): " AWS_S3_CUSTOM_DOMAIN
+else
+    USE_S3="False"
+    AWS_ACCESS_KEY_ID=""
+    AWS_SECRET_ACCESS_KEY=""
+    AWS_STORAGE_BUCKET_NAME=""
+    AWS_S3_REGION_NAME="eu-central-1"
+    AWS_S3_CUSTOM_DOMAIN=""
+fi
+
 # Generate secret key
 SECRET_KEY=$(python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())" 2>/dev/null || openssl rand -base64 32)
 
@@ -147,8 +171,16 @@ EMAIL_HOST_PASSWORD=
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=noreply@$DOMAIN
 
+# S3 Storage
+USE_S3=$USE_S3
+AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+AWS_STORAGE_BUCKET_NAME=$AWS_STORAGE_BUCKET_NAME
+AWS_S3_REGION_NAME=$AWS_S3_REGION_NAME
+AWS_S3_CUSTOM_DOMAIN=$AWS_S3_CUSTOM_DOMAIN
+
 # Features
-ENABLE_EMAIL_VERIFICATION=False
+ENABLE_EMAIL_VERIFICATION=True
 
 # Frontend
 NEXT_PUBLIC_API_URL=https://$DOMAIN/api
@@ -183,8 +215,16 @@ EMAIL_HOST_PASSWORD=
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=noreply@$DOMAIN
 
+# S3 Storage
+USE_S3=$USE_S3
+AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+AWS_STORAGE_BUCKET_NAME=$AWS_STORAGE_BUCKET_NAME
+AWS_S3_REGION_NAME=$AWS_S3_REGION_NAME
+AWS_S3_CUSTOM_DOMAIN=$AWS_S3_CUSTOM_DOMAIN
+
 # Features
-ENABLE_EMAIL_VERIFICATION=False
+ENABLE_EMAIL_VERIFICATION=True
 
 # Frontend
 NEXT_PUBLIC_API_URL=https://$DOMAIN/api

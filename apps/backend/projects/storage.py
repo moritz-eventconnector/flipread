@@ -1,0 +1,22 @@
+"""
+Custom storage backends for S3
+"""
+from django.conf import settings
+from storages.backends.s3boto3 import S3Boto3Storage
+
+
+class MediaStorage(S3Boto3Storage):
+    """Storage for media files (PDFs, page images)"""
+    location = 'media'
+    default_acl = 'private'  # Media files should be private
+    file_overwrite = False
+    custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
+
+
+class PublishedStorage(S3Boto3Storage):
+    """Storage for published flipbooks (public)"""
+    location = 'published'
+    default_acl = 'public-read'  # Published files should be public
+    file_overwrite = False
+    custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
+

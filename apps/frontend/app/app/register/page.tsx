@@ -11,6 +11,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -21,12 +23,23 @@ export default function RegisterPage() {
       return
     }
 
+    if (!acceptedTerms || !acceptedPrivacy) {
+      toast.error('Bitte akzeptieren Sie die AGB und die Datenschutzerklärung')
+      return
+    }
+
     setLoading(true)
 
     try {
-      await register(email, password, passwordConfirm)
-      toast.success('Registrierung erfolgreich!')
-      router.push('/app/dashboard')
+      const response = await register(email, password, passwordConfirm)
+      // Check if email verification is required
+      if (response?.user && !response.user.is_email_verified) {
+        toast.success('Registrierung erfolgreich! Bitte prüfen Sie Ihre E-Mails zur Verifizierung.')
+        router.push('/app/verify-email?pending=true')
+      } else {
+        toast.success('Registrierung erfolgreich!')
+        router.push('/app/dashboard')
+      }
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Registrierung fehlgeschlagen')
     } finally {
@@ -78,10 +91,42 @@ export default function RegisterPage() {
               className="w-full px-4 py-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700"
             />
           </div>
+          <div className="space-y-3">
+            <label className="flex items-start space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                className="mt-1"
+                required
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                Ich akzeptiere die{' '}
+                <Link href="/agb" target="_blank" className="text-primary-600 hover:underline">
+                  Allgemeinen Geschäftsbedingungen
+                </Link>
+              </span>
+            </label>
+            <label className="flex items-start space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acceptedPrivacy}
+                onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+                className="mt-1"
+                required
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                Ich akzeptiere die{' '}
+                <Link href="/datenschutz" target="_blank" className="text-primary-600 hover:underline">
+                  Datenschutzerklärung
+                </Link>
+              </span>
+            </label>
+          </div>
           <button
             type="submit"
-            disabled={loading}
-            className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+            disabled={loading || !acceptedTerms || !acceptedPrivacy}
+            className="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Lädt...' : 'Registrieren'}
           </button>
@@ -90,6 +135,13 @@ export default function RegisterPage() {
           <Link href="/app/login" className="text-primary-600 hover:underline">
             Bereits ein Konto? Anmelden
           </Link>
+        </div>
+        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 text-center text-xs text-gray-500 dark:text-gray-400">
+          <div className="space-x-4">
+            <Link href="/impressum" className="hover:underline">Impressum</Link>
+            <Link href="/datenschutz" className="hover:underline">Datenschutz</Link>
+            <Link href="/agb" className="hover:underline">AGB</Link>
+          </div>
         </div>
       </div>
     </div>

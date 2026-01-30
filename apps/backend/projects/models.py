@@ -3,6 +3,7 @@ Flipbook Project Models
 """
 import os
 import secrets
+import tempfile
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -79,17 +80,28 @@ class Project(models.Model):
                 self.slug = f"{base_slug}-{counter}"
                 counter += 1
         
+        # Ensure published_slug is unique if set
+        if self.published_slug:
+            existing = Project.objects.filter(published_slug=self.published_slug).exclude(id=self.id).first()
+            if existing:
+                raise ValueError(f"published_slug '{self.published_slug}' is already in use by another project")
+        
         # published_slug wird jetzt in views.py beim Publish gesetzt
         super().save(*args, **kwargs)
     
     @property
     def pages_directory(self):
-        """Directory where page images are stored"""
+        """Directory where page images are stored (local only)"""
+        if settings.USE_S3:
+            # For S3, we use a temporary directory during processing
+            return os.path.join(tempfile.gettempdir(), 'flipread', str(self.user.id), str(self.id), 'pages')
         return os.path.join(settings.MEDIA_ROOT, 'projects', str(self.user.id), str(self.id), 'pages')
     
     @property
     def published_directory(self):
-        """Directory where published flipbook is stored"""
+        """Directory where published flipbook is stored (local only)"""
+        if settings.USE_S3:
+            return None  # S3 doesn't use local directories
         if not self.published_slug:
             return None
         return os.path.join(settings.PUBLISHED_ROOT, self.published_slug)

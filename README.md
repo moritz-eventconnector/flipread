@@ -173,15 +173,20 @@ Die aktuelle Implementierung nutzt Django's lokale Authentifizierung. Die Archit
 
 ## 💳 Stripe Setup
 
+**📖 Detaillierte Anleitung:** Siehe [docs/STRIPE_SETUP.md](docs/STRIPE_SETUP.md)
+
+Kurze Zusammenfassung:
 1. Stripe Account erstellen: https://stripe.com
 2. API Keys generieren (Dashboard → Developers → API keys)
 3. Produkte erstellen:
    - **Download Product**: One-time payment (z.B. 9.90 €)
-   - **Hosting Product**: Recurring subscription (z.B. 9.90 €/Monat)
-4. Price IDs kopieren und in `.env` eintragen
+   - **Hosting Product**: Recurring subscription (z.B. 9.00 €/Monat)
+4. Price IDs kopieren und in `.env` eintragen (oder beim `install.sh` eingeben)
 5. Webhook konfigurieren:
-   - Endpoint: `https://flipread.de/api/billing/webhook/`
+   - Endpoint: `https://ihre-domain.de/api/billing/webhook/`
    - Events: `checkout.session.completed`, `invoice.paid`, `customer.subscription.updated`, `customer.subscription.deleted`
+
+**Wichtig:** Erstellen Sie die Produkte sowohl im Test- als auch im Live-Modus!
 
 ## 🎯 Verwendung
 

@@ -67,6 +67,28 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen p-8">
       <div className="max-w-7xl mx-auto">
+        {/* Email Verification Warning */}
+        {user && !user.is_email_verified && (
+          <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <p className="font-semibold text-yellow-800 dark:text-yellow-200">Email nicht verifiziert</p>
+                  <p className="text-sm text-yellow-600 dark:text-yellow-300">Bitte verifizieren Sie Ihre Email-Adresse, um alle Funktionen nutzen zu können.</p>
+                </div>
+              </div>
+              <Link
+                href="/app/verify-email?pending=true"
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm font-semibold transition-colors"
+              >
+                Verifizieren
+              </Link>
+            </div>
+          </div>
+        )}
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <div className="flex gap-4 items-center">
@@ -151,12 +173,29 @@ export default function DashboardPage() {
                           Vorschau
                         </Link>
                         {project.can_download ? (
-                          <a
-                            href={`${process.env.NEXT_PUBLIC_API_URL}/projects/${project.slug}/download/`}
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await api.get(`/projects/${project.slug}/download/`, {
+                                  responseType: 'blob',
+                                })
+                                const url = window.URL.createObjectURL(new Blob([response.data]))
+                                const link = document.createElement('a')
+                                link.href = url
+                                link.setAttribute('download', `${project.slug}.zip`)
+                                document.body.appendChild(link)
+                                link.click()
+                                link.remove()
+                                window.URL.revokeObjectURL(url)
+                                toast.success('Download gestartet')
+                              } catch (error: any) {
+                                toast.error(error.response?.data?.error || 'Fehler beim Download')
+                              }
+                            }}
                             className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
                           >
                             Download
-                          </a>
+                          </button>
                         ) : (
                           <Link
                             href={`/app/projects/${project.slug}/download`}

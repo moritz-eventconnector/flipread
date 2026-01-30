@@ -40,6 +40,28 @@ class ProjectSerializer(serializers.ModelSerializer):
             'processing_started_at', 'processing_completed_at'
         )
     
+    def validate_published_slug(self, value):
+        """Validate published_slug"""
+        if value:
+            # Check if slug format is valid
+            import re
+            if not re.match(r'^[a-z0-9]+(?:-[a-z0-9]+)*$', value):
+                raise serializers.ValidationError(
+                    "Published URL darf nur Kleinbuchstaben, Zahlen und Bindestriche enthalten."
+                )
+            if len(value) < 3:
+                raise serializers.ValidationError("Published URL muss mindestens 3 Zeichen lang sein.")
+            if len(value) > 255:
+                raise serializers.ValidationError("Published URL darf maximal 255 Zeichen lang sein.")
+            
+            # Check uniqueness (exclude current project)
+            project = self.instance
+            if project and Project.objects.filter(published_slug=value).exclude(id=project.id).exists():
+                raise serializers.ValidationError("Diese URL ist bereits vergeben. Bitte wählen Sie eine andere.")
+            elif not project and Project.objects.filter(published_slug=value).exists():
+                raise serializers.ValidationError("Diese URL ist bereits vergeben. Bitte wählen Sie eine andere.")
+        return value
+    
     def get_pdf_url(self, obj):
         request = self.context.get('request')
         if obj.pdf_file and request:

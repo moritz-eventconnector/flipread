@@ -22,8 +22,14 @@ export interface AuthResponse {
   }
 }
 
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const response = await api.post('/auth/login/', { email, password })
+export async function login(email: string, password: string, code?: string): Promise<AuthResponse | { requires_code: boolean }> {
+  const response = await api.post('/auth/login/', { email, password, code })
+  
+  // Check if 2FA code is required
+  if (response.data.requires_code) {
+    return { requires_code: true }
+  }
+  
   const data: AuthResponse = response.data
 
   // Store tokens

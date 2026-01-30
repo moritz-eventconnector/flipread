@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, PasswordResetToken
+from .models import User, PasswordResetToken, LoginCode, EmailVerificationToken
 
 
 @admin.register(User)
@@ -15,7 +15,7 @@ class UserAdmin(BaseUserAdmin):
         (None, {'fields': ('email', 'password')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'role')}),
         ('Hosting', {'fields': ('hosting_enabled', 'hosting_enabled_until')}),
-        ('Email', {'fields': ('is_email_verified', 'email_verification_token')}),
+        ('Email', {'fields': ('is_email_verified',)}),
         ('AUTHENTIK', {'fields': ('external_id', 'external_provider'), 'classes': ('collapse',)}),
         ('Important dates', {'fields': ('last_login', 'created_at', 'updated_at')}),
     )
@@ -36,4 +36,22 @@ class PasswordResetTokenAdmin(admin.ModelAdmin):
     list_filter = ('used', 'created_at')
     search_fields = ('user__email', 'token')
     readonly_fields = ('token', 'created_at')
+
+
+@admin.register(LoginCode)
+class LoginCodeAdmin(admin.ModelAdmin):
+    list_display = ('user', 'code', 'created_at', 'expires_at', 'used', 'ip_address')
+    list_filter = ('used', 'created_at', 'expires_at')
+    search_fields = ('user__email', 'code', 'ip_address')
+    readonly_fields = ('code', 'created_at')
+    ordering = ('-created_at',)
+
+
+@admin.register(EmailVerificationToken)
+class EmailVerificationTokenAdmin(admin.ModelAdmin):
+    list_display = ('user', 'token', 'created_at', 'expires_at', 'used')
+    list_filter = ('used', 'created_at', 'expires_at')
+    search_fields = ('user__email', 'token')
+    readonly_fields = ('token', 'created_at')
+    ordering = ('-created_at',)
 

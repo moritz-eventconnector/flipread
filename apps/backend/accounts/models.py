@@ -12,6 +12,7 @@ Die Auth-Abstraction befindet sich in:
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.utils import timezone
+from datetime import timedelta
 
 
 class UserManager(BaseUserManager):
@@ -59,7 +60,6 @@ class User(AbstractUser):
     # User fields
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.USER)
     is_email_verified = models.BooleanField(default=False)
-    email_verification_token = models.CharField(max_length=100, blank=True, null=True)
     
     # AUTHENTIK READY: Externe User-ID für Authentik Integration
     external_id = models.CharField(max_length=255, blank=True, null=True, unique=True, db_index=True)
@@ -105,6 +105,29 @@ class User(AbstractUser):
         return self.has_active_hosting and self.is_active
 
 
+class EmailVerificationToken(models.Model):
+    """Email verification tokens"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='email_verification_tokens')
+    token = models.CharField(max_length=100, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = 'email_verification_tokens'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token', 'used', 'expires_at']),
+        ]
+    
+    def __str__(self):
+        return f"Email verification for {self.user.email}"
+    
+    def is_valid(self):
+        """Check if token is still valid"""
+        return not self.used and self.expires_at > timezone.now()
+
+
 class PasswordResetToken(models.Model):
     """Password reset tokens"""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_tokens')
@@ -120,3 +143,39 @@ class PasswordResetToken(models.Model):
     def __str__(self):
         return f"Password reset for {self.user.email}"
 
+
+class LoginCode(models.Model):
+    """2FA Login codes sent via email"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='login_codes')
+    code = models.CharField(max_length=6)  # 6-digit code
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used = models.BooleanField(default=False)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'login_codes'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['code', 'used', 'expires_at']),
+        ]
+    
+    def __str__(self):
+        return f"Login code for {self.user.email}"
+    
+    def is_valid(self):
+        """Check if code is still valid"""
+        return not self.used and self.expires_at > timezone.now()
+    
+    @classmethod
+    def generate_code(cls):
+        """Generate a random 6-digit code"""
+        import random
+        return str(random.randint(100000, 999999))
+    
+    def save(self, *args, **kwargs):
+        """Auto-set expires_at to 15 minutes from now if not set"""
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(minutes=15)
+        super().save(*args, **kwargs)
