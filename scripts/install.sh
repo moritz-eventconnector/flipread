@@ -88,6 +88,10 @@ echo "=========================================="
 echo "Installiere Dependencies..."
 echo "=========================================="
 
+# Configure Git to ignore file mode changes (executable bit)
+# This prevents chmod +x from being seen as a change by Git
+git config core.fileMode false 2>/dev/null || true
+
 # Install Docker if not present
 if ! command -v docker &> /dev/null; then
     echo "Installiere Docker..."
@@ -566,6 +570,7 @@ fi
 
 echo "Git-Hinweis:"
 echo "  - Lokale Dateien (.env, flipread.local.conf) sind in .gitignore"
+echo "  - Git ist konfiguriert, Dateiberechtigungen zu ignorieren (core.fileMode=false)"
 echo "  - Sie können jetzt 'git pull' ausführen, ohne Konflikte zu haben"
 echo ""
 
