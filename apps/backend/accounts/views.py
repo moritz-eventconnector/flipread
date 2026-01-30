@@ -167,24 +167,33 @@ class LoginView(generics.GenericAPIView):
                 }
             })
         
-        # No code provided, send 2FA code via email
-        # Invalidate old codes
-        LoginCode.objects.filter(user=user, used=False).update(used=True)
-        
-        # Generate new code (expires_at will be set to 15 minutes by model's save method)
-        login_code = LoginCode.objects.create(
-            user=user,
-            code=LoginCode.generate_code(),
-            ip_address=request.META.get('REMOTE_ADDR')
-        )
-        
-        # Render HTML email template
-        html_message = render_to_string('emails/login_code.html', {
-            'code': login_code.code,
-            'current_year': timezone.now().year,
-        })
-        
-        plain_message = f"""Hallo,
+        # 2FA per Email is always enabled for all users
+        if settings.ENABLE_2FA_EMAIL:
+            # No code provided, send 2FA code via email
+            # Invalidate old codes
+            LoginCode.objects.filter(user=user, used=False).update(used=True)
+            
+            # Generate new code (expires_at will be set to 15 minutes by model's save method)
+            login_code = LoginCode.objects.create(
+                user=user,
+                code=LoginCode.generate_code(),
+                ip_address=request.META.get('REMOTE_ADDR')
+            )
+            
+            # Render HTML email template
+            try:
+                html_message = render_to_string('emails/login_code.html', {
+                    'user': user,
+                    'code': login_code.code,  # Template uses 'code', not 'login_code'
+                    'login_code': login_code.code,  # Also provide for compatibility
+                    'validity_minutes': 15,
+                    'site_name': 'FlipRead',
+                    'current_year': timezone.now().year,
+                })
+            except Exception:
+                html_message = None
+            
+            plain_message = f"""Hallo,
 
 Sie haben versucht, sich bei FlipRead anzumelden.
 
@@ -199,20 +208,56 @@ Falls Sie sich nicht angemeldet haben, ignorieren Sie diese Email bitte.
 Mit freundlichen Grüßen,
 Ihr FlipRead Team
 """
+            
+            # Send email - this is required for 2FA
+            try:
+                send_mail(
+                    subject='Ihr FlipRead Login-Code',
+                    message=plain_message,
+                    html_message=html_message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                # Log the error with full details
+                import logging
+                import traceback
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to send login code email to {user.email}: {str(e)}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                # Return detailed error for debugging
+                error_response = {
+                    'error': f'Failed to send login code email: {str(e)}. Please check email configuration.',
+                    'requires_code': True,
+                }
+                if settings.DEBUG:
+                    error_response['debug'] = {
+                        'email_host': settings.EMAIL_HOST or 'NOT SET',
+                        'email_port': settings.EMAIL_PORT,
+                        'email_user': settings.EMAIL_HOST_USER or 'NOT SET',
+                        'from_email': settings.DEFAULT_FROM_EMAIL,
+                    }
+                return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            return Response({
+                'message': '2FA code sent to your email.',
+                'requires_code': True
+            }, status=status.HTTP_202_ACCEPTED)
         
-        send_mail(
-            subject='Ihr Anmelde-Code - FlipRead',
-            message=plain_message,
-            html_message=html_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
+        # No 2FA required, generate tokens directly
+        user.last_login = timezone.now()
+        user.save(update_fields=['last_login'])
+        
+        refresh = RefreshToken.for_user(user)
         
         return Response({
-            'message': 'Login code sent to email',
-            'requires_code': True
-        }, status=status.HTTP_200_OK)
+            'user': UserSerializer(user).data,
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+        })
 
 
 class UserProfileView(generics.RetrieveUpdateAPIView):

@@ -192,9 +192,21 @@ SIMPLE_JWT = {
 }
 
 # CORS
-CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[
-    env('SITE_URL', default='https://flipread.de'),
-])
+# Get CORS origins from environment or use SITE_URL
+cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=[])
+if not cors_origins:
+    # If not set, use SITE_URL
+    site_url = env('SITE_URL', default='https://flipread.de')
+    cors_origins = [site_url]
+    # Also add any domain from ALLOWED_HOSTS that starts with http
+    allowed_hosts = env.list('ALLOWED_HOSTS', default=[])
+    for host in allowed_hosts:
+        if host and not host.startswith('http') and '.' in host:
+            # Add both http and https versions
+            cors_origins.append(f'https://{host}')
+            cors_origins.append(f'http://{host}')
+
+CORS_ALLOWED_ORIGINS = cors_origins
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -245,5 +257,43 @@ CELERY_TIMEZONE = TIME_ZONE
 
 # File Upload
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760
+
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'accounts': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+    },
+}  # 10MB
 
