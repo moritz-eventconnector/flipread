@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import Script from 'next/script'
+import React, { useEffect, useRef, useState } from 'react'
+import HTMLFlipBook from 'react-pageflip'
 
 interface FlipbookViewerProps {
   project: {
@@ -25,73 +25,45 @@ interface FlipbookViewerProps {
   }
 }
 
+// Page component for react-pageflip (requires forwardRef)
+const Page = React.forwardRef<HTMLDivElement, { imageUrl: string; pageNumber: number }>(
+  ({ imageUrl, pageNumber }, ref) => {
+    return (
+      <div ref={ref} className="page" style={{ width: '100%', height: '100%' }}>
+        <div className="page-content" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img
+            src={imageUrl}
+            alt={`Seite ${pageNumber}`}
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+            loading="lazy"
+          />
+        </div>
+      </div>
+    )
+  }
+)
+Page.displayName = 'Page'
+
 export function FlipbookViewer({ project }: FlipbookViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [stPageFlipLoaded, setStPageFlipLoaded] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
+  const flipBookRef = useRef<any>(null)
+  const [currentPage, setCurrentPage] = useState(0)
+  const [imageUrls, setImageUrls] = useState<string[]>([])
 
+  // Calculate dimensions based on first page
+  const firstPage = project.pages_json?.pages?.[0]
+  const pageWidth = firstPage?.width || 800
+  const pageHeight = firstPage?.height || 600
+  const aspectRatio = pageWidth / pageHeight
+  const baseWidth = 800
+  const baseHeight = Math.round(baseWidth / aspectRatio)
+
+  // Prepare image URLs
   useEffect(() => {
-    // Get page from URL
-    const urlParams = new URLSearchParams(window.location.search)
-    const pageParam = urlParams.get('page')
-    if (pageParam && project.pages_json && project.pages_json.total_pages) {
-      const pageNum = parseInt(pageParam, 10)
-      if (pageNum >= 1 && pageNum <= project.pages_json.total_pages) {
-        setCurrentPage(pageNum)
-      }
-    }
-  }, [project.pages_json?.total_pages])
-
-  useEffect(() => {
-    if (!stPageFlipLoaded || !containerRef.current || !project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {
-      console.log('FlipbookViewer: Waiting for data...', {
-        stPageFlipLoaded,
-        containerRef: !!containerRef.current,
-        pages_json: !!project.pages_json,
-        pages: project.pages_json?.pages?.length || 0
-      })
+    if (!project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {
       return
     }
 
-    // Initialize StPageFlip
-    const stPageFlip = (window as any).StPageFlip
-
-    if (!stPageFlip) {
-      console.error('FlipbookViewer: StPageFlip not loaded')
-      return
-    }
-
-    // Calculate dimensions based on first page
-    const firstPage = project.pages_json.pages[0]
-    if (!firstPage) {
-      console.error('FlipbookViewer: No first page found')
-      return
-    }
-    
-    const pageWidth = firstPage.width || 800
-    const pageHeight = firstPage.height || 600
-    const aspectRatio = pageWidth / pageHeight
-    const baseWidth = 800
-    const baseHeight = Math.round(baseWidth / aspectRatio)
-    
-    console.log('FlipbookViewer: Initializing with', {
-      pages: project.pages_json.pages.length,
-      firstPage: { width: pageWidth, height: pageHeight, aspectRatio },
-      flipbookSize: { width: baseWidth, height: baseHeight }
-    })
-
-    const flipbook = new stPageFlip(containerRef.current, {
-      width: baseWidth,
-      height: baseHeight,
-      showCover: true,
-      maxShadowOpacity: 0.5,
-      flippingTime: 1000,
-      usePortrait: aspectRatio < 1,
-      startPage: currentPage - 1,
-    })
-
-    // Load pages - StPageFlip expects array of objects with src, width, height
-    const pages = project.pages_json.pages.map((page, index) => {
+    const urls = project.pages_json.pages.map((page) => {
       const pageData = project.pages?.find(p => p.page_number === page.page_number)
       // Use absolute URL from API or construct from file path
       let imageUrl = pageData?.image_url
@@ -102,66 +74,122 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         imageUrl = `${apiBase}/media/projects/${project.slug}/pages/${page.file}`
       }
       
-      const pageObj = {
-        src: imageUrl,
-        width: page.width || 800,
-        height: page.height || 600,
+      return imageUrl
+    })
+
+    setImageUrls(urls)
+  }, [project.pages_json, project.pages, project.slug])
+
+  // Get page from URL on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const pageParam = urlParams.get('page')
+    if (pageParam && project.pages_json?.total_pages) {
+      const pageNum = parseInt(pageParam, 10)
+      if (pageNum >= 1 && pageNum <= project.pages_json.total_pages) {
+        setCurrentPage(pageNum - 1) // react-pageflip uses 0-based index
       }
-      
-      console.log(`FlipbookViewer: Page ${index + 1}`, pageObj)
-      return pageObj
-    })
+    }
+  }, [project.pages_json?.total_pages])
 
-    console.log('FlipbookViewer: Loading pages into StPageFlip', pages.length)
-    flipbook.loadPages(pages)
+  // Navigate to initial page when flipbook is ready
+  useEffect(() => {
+    if (flipBookRef.current && currentPage > 0) {
+      const pageFlip = flipBookRef.current.getPageFlip()
+      if (pageFlip) {
+        // Small delay to ensure flipbook is fully initialized
+        setTimeout(() => {
+          pageFlip.turnToPage(currentPage)
+        }, 100)
+      }
+    }
+  }, [currentPage, imageUrls.length])
 
-    // Update URL when page changes
-    flipbook.on('flip', (e: any) => {
-      const newPage = e.data + 1
-      setCurrentPage(newPage)
-      const url = new URL(window.location.href)
-      url.searchParams.set('page', newPage.toString())
-      window.history.pushState({}, '', url.toString())
-    })
+  const handleFlip = (e: any) => {
+    const newPage = e.data
+    setCurrentPage(newPage)
+    
+    // Update URL
+    const url = new URL(window.location.href)
+    url.searchParams.set('page', (newPage + 1).toString())
+    window.history.pushState({}, '', url.toString())
+  }
 
-    // Keyboard navigation
+  // Keyboard navigation
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!flipBookRef.current) return
+      
+      const pageFlip = flipBookRef.current.getPageFlip()
+      if (!pageFlip) return
+
       if (e.key === 'ArrowLeft') {
-        flipbook.flipPrev()
+        pageFlip.flipPrev()
       } else if (e.key === 'ArrowRight') {
-        flipbook.flipNext()
+        pageFlip.flipNext()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
-
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      if (flipbook && typeof flipbook.destroy === 'function') {
-        flipbook.destroy()
-      }
     }
-  }, [stPageFlipLoaded, project.pages_json, project.pages, currentPage])
+  }, [])
+
+  if (!project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 dark:text-red-400 mb-4">Fehler: Projekt-Daten sind unvollständig</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (imageUrls.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 dark:text-gray-400">Lädt Flipbook...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <>
-      <Script
-        src="https://cdn.jsdelivr.net/npm/st-pageflip@latest/dist/st-pageflip.min.js"
-        onLoad={() => setStPageFlipLoaded(true)}
-      />
-      <div className="w-full h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 relative">
-        <div
-          ref={containerRef}
+    <div className="w-full h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 relative">
+      <div className="flipbook-wrapper" style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <HTMLFlipBook
+          ref={flipBookRef}
+          width={baseWidth}
+          height={baseHeight}
+          size="stretch"
+          minWidth={400}
+          maxWidth={1200}
+          minHeight={300}
+          maxHeight={900}
+          maxShadowOpacity={0.5}
+          showCover={true}
+          flippingTime={1000}
+          usePortrait={aspectRatio < 1}
+          mobileScrollSupport={true}
+          onFlip={handleFlip}
           className="flipbook-container"
-          style={{ width: '100%', height: '100%', maxWidth: '1200px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-        />
-        {project.pages_json && project.pages_json.total_pages && (
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-50 text-white px-4 py-2 rounded z-10">
-            Seite {currentPage} von {project.pages_json.total_pages}
-          </div>
-        )}
+        >
+          {imageUrls.map((imageUrl, index) => (
+            <Page
+              key={index}
+              imageUrl={imageUrl}
+              pageNumber={index + 1}
+            />
+          ))}
+        </HTMLFlipBook>
       </div>
-    </>
+      {project.pages_json && project.pages_json.total_pages && (
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-50 text-white px-4 py-2 rounded z-10">
+          Seite {currentPage + 1} von {project.pages_json.total_pages}
+        </div>
+      )}
+    </div>
   )
 }
-

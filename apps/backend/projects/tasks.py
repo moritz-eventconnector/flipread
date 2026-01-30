@@ -135,7 +135,7 @@ def publish_flipbook_task(project_id):
 <body>
     <div id="flipbook-container"></div>
     <div id="page-info" class="page-info"></div>
-    <script src="https://cdn.jsdelivr.net/npm/st-pageflip@latest/dist/st-pageflip.min.js"></script>
+    <script src="/lib/st-pageflip.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>"""

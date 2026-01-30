@@ -80,11 +80,24 @@ echo ""
 echo "Warte auf Services..."
 sleep 10
 
-# Restart Nginx to reload upstream configuration
+# Restart Nginx to reload upstream configuration after containers are up
+# This ensures Nginx can resolve the new container IPs
 echo ""
 echo "Starte Nginx neu (für Upstream-Konfiguration)..."
 docker compose restart nginx
-sleep 3
+sleep 5
+
+# Verify services are reachable
+echo ""
+echo "Prüfe Service-Verfügbarkeit..."
+if docker compose exec -T nginx wget -q -O- http://frontend:3000/ > /dev/null 2>&1; then
+    echo "✅ Frontend von Nginx erreichbar"
+else
+    echo "⚠️  Frontend von Nginx nicht erreichbar - versuche erneut..."
+    sleep 3
+    docker compose restart nginx
+    sleep 3
+fi
 
 # Check if containers are running
 echo ""
@@ -123,8 +136,36 @@ echo "Starte Celery neu..."
 docker compose restart celery celery-beat
 
 echo ""
-echo "Führe Health Checks aus..."
+echo "Starte Nginx neu (für Upstream-Konfiguration nach Container-Neustart)..."
+docker compose restart nginx
 sleep 5
+
+# Verify services are reachable
+echo ""
+echo "Prüfe Service-Verfügbarkeit..."
+if docker compose exec -T nginx wget -q -O- http://frontend:3000/ > /dev/null 2>&1; then
+    echo "✅ Frontend von Nginx erreichbar"
+else
+    echo "⚠️  Frontend von Nginx nicht erreichbar - versuche erneut..."
+    sleep 3
+    docker compose restart nginx
+    sleep 3
+    if docker compose exec -T nginx wget -q -O- http://frontend:3000/ > /dev/null 2>&1; then
+        echo "✅ Frontend jetzt erreichbar"
+    else
+        echo "❌ Frontend immer noch nicht erreichbar - bitte manuell prüfen"
+    fi
+fi
+
+if docker compose exec -T nginx wget -q -O- http://backend:8000/health/ > /dev/null 2>&1; then
+    echo "✅ Backend von Nginx erreichbar"
+else
+    echo "⚠️  Backend von Nginx nicht erreichbar"
+fi
+
+echo ""
+echo "Führe Health Checks aus..."
+sleep 3
 
 # Health checks with detailed output
 echo ""
