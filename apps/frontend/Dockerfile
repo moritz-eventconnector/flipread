@@ -51,6 +51,23 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-# Find and run server.js - Next.js 14 standalone creates it in the root of standalone
-CMD sh -c 'if [ -f ./server.js ]; then node server.js; elif [ -f ./app/server.js ]; then node ./app/server.js; else echo "ERROR: server.js not found. Directory contents:"; ls -laR . | head -50; exit 1; fi'
+# Find and run server.js
+# Next.js 14 standalone creates server.js in different locations depending on app structure
+# Try common locations and provide helpful error message if not found
+CMD sh -c 'SERVER_FILE=""; \
+  if [ -f ./server.js ]; then SERVER_FILE="./server.js"; \
+  elif [ -f ./app/server.js ]; then SERVER_FILE="./app/server.js"; \
+  elif [ -f ./.next/standalone/server.js ]; then SERVER_FILE="./.next/standalone/server.js"; \
+  elif [ -f ./.next/server.js ]; then SERVER_FILE="./.next/server.js"; \
+  else \
+    echo "ERROR: server.js not found. Searching..."; \
+    find . -name "server.js" -type f 2>/dev/null | head -5; \
+    echo "Directory structure:"; \
+    ls -la; \
+    if [ -d .next ]; then echo ".next contents:"; ls -la .next; fi; \
+    if [ -d app ]; then echo "app contents:"; ls -la app; fi; \
+    exit 1; \
+  fi; \
+  echo "Starting Next.js server with: $SERVER_FILE"; \
+  node $SERVER_FILE'
 
