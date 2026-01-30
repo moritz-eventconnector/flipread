@@ -81,9 +81,11 @@ class ProjectSerializer(serializers.ModelSerializer):
 
 
 class ProjectCreateSerializer(serializers.ModelSerializer):
+    slug = serializers.CharField(read_only=True)  # Include slug in response
+    
     class Meta:
         model = Project
-        fields = ('title', 'description', 'pdf_file')
+        fields = ('title', 'description', 'pdf_file', 'slug')
     
     def validate_pdf_file(self, value):
         """Validate PDF file"""
@@ -112,7 +114,10 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
         instance = Project(**validated_data)
         instance._user_id = user.id
         
-        # Now save the instance (this will trigger project_upload_path)
+        # Now save the instance (this will trigger project_upload_path and slug generation in save() method)
         instance.save()
+        
+        # Refresh from database to ensure slug is available in the response
+        instance.refresh_from_db()
         return instance
 

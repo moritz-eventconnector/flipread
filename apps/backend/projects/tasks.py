@@ -247,40 +247,11 @@ def process_pdf_task(project_id):
             original_path = os.path.join(pages_dir, page_file)
             if os.path.exists(original_path):
                 # Delete original PDF page files (pdftoppm output)
+                # These have been processed and renamed/split in the loop above
                 try:
                     os.remove(original_path)
                 except:
                     pass
-            # Upload to storage (local or S3)
-            image_file_path = f'projects/{project.user.id}/{project.id}/pages/{page_file}'
-            if settings.USE_S3:
-                # Read file and upload to S3
-                with open(page_path, 'rb') as f:
-                    file_content = f.read()
-                    project_page = ProjectPage(
-                        project=project,
-                        page_number=idx,
-                        width=width,
-                        height=height
-                    )
-                    project_page.image_file.save(page_file, ContentFile(file_content), save=False)
-                    project_page.save()
-            else:
-                # Local storage - file is already in the right place
-                project_page = ProjectPage.objects.create(
-                    project=project,
-                    page_number=idx,
-                    image_file=image_file_path,
-                    width=width,
-                    height=height
-                )
-            
-            pages_data.append({
-                'page_number': idx,
-                'file': page_file,
-                'width': width,
-                'height': height
-            })
         
         # Update project
         project.total_pages = total_pages

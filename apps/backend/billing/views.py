@@ -22,13 +22,39 @@ logger = logging.getLogger(__name__)
 # The api_key MUST be set before any Stripe API calls
 # Setting it to None breaks the stripe module's internal structure
 # NEVER set stripe.api_key to None - it breaks the module
-if settings.STRIPE_SECRET_KEY and len(settings.STRIPE_SECRET_KEY) > 10:
-    stripe.api_key = settings.STRIPE_SECRET_KEY
-    logger.info("Stripe API key configured")
-else:
-    logger.warning("Stripe not configured - running in DEV mode")
-    # IMPORTANT: Do NOT set stripe.api_key to None
-    # If we need to use Stripe APIs, we must check settings first and return early
+
+# Helper function to safely set Stripe API key
+def ensure_stripe_api_key():
+    """Ensure stripe.api_key is set if a valid key is available"""
+    # Check if we have a valid Stripe secret key
+    if not settings.STRIPE_SECRET_KEY:
+        logger.warning("STRIPE_SECRET_KEY is not set")
+        return False
+    
+    # Check if key is long enough (valid Stripe keys are much longer)
+    if len(settings.STRIPE_SECRET_KEY) <= 10:
+        logger.warning(f"STRIPE_SECRET_KEY is too short ({len(settings.STRIPE_SECRET_KEY)} chars) - likely invalid")
+        return False
+    
+    # Check if key starts with sk_ (Stripe secret keys start with sk_test_ or sk_live_)
+    if not settings.STRIPE_SECRET_KEY.startswith('sk_'):
+        logger.warning(f"STRIPE_SECRET_KEY does not start with 'sk_' - likely invalid")
+        return False
+    
+    # Set the API key - we know it's valid at this point
+    if not stripe.api_key or stripe.api_key != settings.STRIPE_SECRET_KEY:
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        logger.info("Stripe API key set/updated")
+    
+    # Final verification
+    if not stripe.api_key:
+        logger.error("stripe.api_key is None after setting - this should not happen!")
+        return False
+    
+    return True
+
+# Initialize on module load
+ensure_stripe_api_key()
 
 
 def get_or_create_stripe_customer(user):
@@ -46,13 +72,18 @@ def get_or_create_stripe_customer(user):
     
     # Ensure stripe.api_key is set BEFORE any Stripe API calls
     # This is critical - the stripe module breaks if api_key is None when APIs are called
-    if not stripe.api_key or stripe.api_key != settings.STRIPE_SECRET_KEY:
-        stripe.api_key = settings.STRIPE_SECRET_KEY
-        logger.info("Stripe API key set in get_or_create_stripe_customer")
+    if not ensure_stripe_api_key():
+        # DEV MODE: Return mock customer
+        logger.info(f"DEV MODE: Creating mock Stripe customer for user {user.id}")
+        customer, _ = StripeCustomer.objects.get_or_create(
+            user=user,
+            defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
+        )
+        return customer
     
-    # Verify that stripe.api_key is actually set (not None)
+    # Final verification that stripe.api_key is set (should never be None at this point)
     if not stripe.api_key:
-        logger.error("stripe.api_key is None - cannot create Stripe customer")
+        logger.error("stripe.api_key is None after ensure_stripe_api_key() - this should not happen")
         # Return mock customer instead of crashing
         customer, _ = StripeCustomer.objects.get_or_create(
             user=user,
@@ -96,6 +127,11 @@ def get_or_create_stripe_customer(user):
 @permission_classes([permissions.IsAuthenticated])
 def checkout_download(request):
     """Create checkout session for download payment"""
+    # Ensure Stripe API key is set before any operations
+    if not ensure_stripe_api_key():
+        # DEV MODE handling is done in the function body
+        pass
+    
     project_id = request.data.get('project_id')
     
     if not project_id:
@@ -120,7 +156,8 @@ def checkout_download(request):
         )
     
     # DEV MODE: Skip payment and enable download directly
-    if not stripe.api_key or not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
+    # Check settings directly, not stripe.api_key (which might be None)
+    if not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
         project.download_enabled = True
         project.save()
         
@@ -140,10 +177,25 @@ def checkout_download(request):
         })
     
     # Validate Stripe configuration
-    if not settings.STRIPE_SECRET_KEY:
-        logger.error("STRIPE_SECRET_KEY not configured")
+    if not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
+        logger.error("STRIPE_SECRET_KEY not configured or invalid")
         return Response(
             {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    # Ensure Stripe API key is set before creating checkout session
+    if not ensure_stripe_api_key():
+        logger.error("Failed to set Stripe API key")
+        return Response(
+            {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    if not stripe.api_key:
+        logger.error("stripe.api_key is None - cannot create checkout session")
+        return Response(
+            {'error': 'Payment system error. Please contact support.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
@@ -256,9 +308,12 @@ def checkout_hosting(request):
     
     # Ensure stripe.api_key is set before calling get_or_create_stripe_customer
     # This is critical - the stripe module breaks if api_key is None when APIs are called
-    if not stripe.api_key or stripe.api_key != settings.STRIPE_SECRET_KEY:
-        stripe.api_key = settings.STRIPE_SECRET_KEY
-        logger.info("Stripe API key set in checkout_hosting")
+    if not ensure_stripe_api_key():
+        logger.error("STRIPE_SECRET_KEY is not valid - cannot create checkout session")
+        return Response(
+            {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     
     try:
         stripe_customer = get_or_create_stripe_customer(request.user)
@@ -289,6 +344,23 @@ def checkout_hosting(request):
         )
     
     # Create checkout session
+    # CRITICAL: Ensure stripe.api_key is set before calling any Stripe API
+    # The stripe module breaks if api_key is None when APIs are called
+    if not ensure_stripe_api_key():
+        logger.error("STRIPE_SECRET_KEY is not valid - cannot create checkout session")
+        return Response(
+            {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    # Final verification that stripe.api_key is set
+    if not stripe.api_key:
+        logger.error("stripe.api_key is None - cannot create checkout session")
+        return Response(
+            {'error': 'Payment system error. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
     try:
         checkout_session = stripe.checkout.Session.create(
             customer=stripe_customer.stripe_customer_id,
@@ -336,10 +408,25 @@ def billing_portal(request):
         })
     
     # Validate Stripe configuration
-    if not settings.STRIPE_SECRET_KEY:
-        logger.error("STRIPE_SECRET_KEY not configured")
+    if not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
+        logger.error("STRIPE_SECRET_KEY not configured or invalid")
         return Response(
             {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    # Ensure Stripe API key is set before creating billing portal session
+    if not ensure_stripe_api_key():
+        logger.error("Failed to set Stripe API key")
+        return Response(
+            {'error': 'Payment system not configured. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    if not stripe.api_key:
+        logger.error("stripe.api_key is None - cannot create billing portal session")
+        return Response(
+            {'error': 'Payment system error. Please contact support.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     

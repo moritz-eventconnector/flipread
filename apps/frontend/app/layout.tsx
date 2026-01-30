@@ -20,6 +20,10 @@ export const metadata: Metadata = {
   publisher: 'FlipRead',
   icons: {
     icon: [
+      { url: '/favicon.png', type: 'image/png', sizes: 'any' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    apple: [
       { url: '/favicon.png', type: 'image/png' },
     ],
   },

@@ -35,6 +35,29 @@ export default function NewProjectPage() {
         },
       })
 
+      // Ensure slug is available before redirecting
+      if (!response.data.slug) {
+        // If slug is not in response, try to get project by ID
+        if (response.data.id) {
+          // Wait a bit and fetch the project to get the slug
+          await new Promise(resolve => setTimeout(resolve, 500))
+          try {
+            const projectResponse = await api.get(`/projects/${response.data.id}/`)
+            if (projectResponse.data.slug) {
+              router.push(`/app/projects/${projectResponse.data.slug}`)
+              toast.success('Projekt erstellt! Verarbeitung läuft...')
+              return
+            }
+          } catch (fetchError) {
+            console.error('Error fetching project:', fetchError)
+          }
+        }
+        // Fallback: redirect to dashboard if slug is not available
+        toast.success('Projekt erstellt! Verarbeitung läuft...')
+        router.push('/app/dashboard')
+        return
+      }
+
       toast.success('Projekt erstellt! Verarbeitung läuft...')
       router.push(`/app/projects/${response.data.slug}`)
     } catch (error: any) {
