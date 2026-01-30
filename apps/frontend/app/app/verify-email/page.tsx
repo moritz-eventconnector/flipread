@@ -9,7 +9,8 @@ import toast from 'react-hot-toast'
 export default function VerifyEmailPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'resending' | 'pending'>('loading')
+  const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'pending'>('loading')
+  const [resending, setResending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const token = searchParams.get('token')
   const pending = searchParams.get('pending')
@@ -42,7 +43,7 @@ export default function VerifyEmailPage() {
   }
 
   const resendVerification = async () => {
-    setStatus('resending')
+    setResending(true)
     try {
       await api.post('/auth/resend-verification/')
       toast.success('Verifizierungs-Email wurde erneut gesendet')
@@ -52,6 +53,8 @@ export default function VerifyEmailPage() {
       setStatus('error')
       setError(error.response?.data?.error || 'Fehler beim Senden der Email')
       toast.error('Fehler beim Senden der Email')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -82,10 +85,10 @@ export default function VerifyEmailPage() {
           <div className="space-y-3">
             <button
               onClick={resendVerification}
-              disabled={status === 'resending'}
+              disabled={resending}
               className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
             >
-              {status === 'resending' ? 'Wird gesendet...' : 'Email erneut senden'}
+              {resending ? 'Wird gesendet...' : 'Email erneut senden'}
             </button>
             <Link
               href="/app/dashboard"
@@ -138,10 +141,10 @@ export default function VerifyEmailPage() {
         <div className="space-y-3">
           <button
             onClick={resendVerification}
-            disabled={status === 'resending'}
+            disabled={resending}
             className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
           >
-            {status === 'resending' ? 'Wird gesendet...' : 'Verifizierungs-Email erneut senden'}
+            {resending ? 'Wird gesendet...' : 'Verifizierungs-Email erneut senden'}
           </button>
           <Link
             href="/app/login"

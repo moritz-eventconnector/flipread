@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { login } from '@/lib/auth'
 import toast from 'react-hot-toast'
 
@@ -42,6 +43,26 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
+        <div className="mb-6 flex justify-center">
+          <Link href="/">
+            <Image
+              src="/logo.png"
+              alt="FlipRead Logo"
+              width={150}
+              height={60}
+              className="h-12 w-auto dark:hidden"
+              priority
+            />
+            <Image
+              src="/logo-dark.png"
+              alt="FlipRead Logo"
+              width={150}
+              height={60}
+              className="h-12 w-auto hidden dark:block"
+              priority
+            />
+          </Link>
+        </div>
         <h1 className="text-3xl font-bold mb-6 text-center text-gray-900 dark:text-white">Anmelden</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

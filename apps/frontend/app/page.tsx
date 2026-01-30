@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
@@ -287,6 +288,15 @@ export default function Home() {
 
         {/* Footer */}
         <footer className="py-8 bg-gray-900 text-gray-400 text-center text-sm" itemScope itemType="https://schema.org/WPFooter">
+          <div className="mb-4 flex justify-center">
+            <Image
+              src="/logo.png"
+              alt="FlipRead Logo"
+              width={120}
+              height={48}
+              className="h-12 w-auto opacity-80"
+            />
+          </div>
           <p>&copy; {new Date().getFullYear()} FlipRead. Alle Rechte vorbehalten.</p>
           <div className="mt-2 space-x-4">
             <Link href="/impressum" className="hover:text-white hover:underline">Impressum</Link>
