@@ -211,14 +211,120 @@ echo "=========================================="
 echo "Starte Docker Container..."
 echo "=========================================="
 
-# Create local nginx config with domain replacement (don't modify original)
+# Create local nginx config - start with HTTP-only (SSL will be added after certbot)
 echo ""
 echo "Erstelle lokale Nginx-Konfiguration..."
 if [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
-    sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
-    echo "✅ Lokale Nginx-Konfiguration erstellt: infra/nginx/conf.d/flipread.local.conf"
+    # Create HTTP-only config first (SSL will be enabled after certificates are created)
+    if [ -f scripts/fix-nginx-ssl.sh ]; then
+        # Use the template to create initial config with domain
+        sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf.tmp
+        # Then convert to HTTP-only
+        bash scripts/fix-nginx-ssl.sh
+        rm -f infra/nginx/conf.d/flipread.local.conf.tmp
+    else
+        # Fallback: create HTTP-only config manually
+        cat > infra/nginx/conf.d/flipread.local.conf <<EOF
+# Upstream definitions
+upstream backend {
+    server backend:8000;
+}
+
+upstream frontend {
+    server frontend:3000;
+}
+
+# HTTP server (SSL will be enabled after certificate creation)
+server {
+    listen 80;
+    server_name $DOMAIN www.$DOMAIN;
+
+    # Let's Encrypt challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Static files
+    location /static/ {
+        alias /static/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /media/ {
+        alias /media/;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    # Public flipbooks
+    location ~ ^/public/([^/]+)/?$ {
+        alias /published/\$1/index.html;
+        try_files \$uri /published/\$1/index.html =404;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+    
+    location ~ ^/public/([^/]+)/(.+)$ {
+        alias /published/\$1/\$2;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    # API endpoints
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Admin
+    location /admin/ {
+        proxy_pass http://backend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Frontend (Next.js)
+    location / {
+        proxy_pass http://frontend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Health check
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
+EOF
+    fi
+    echo "✅ Lokale Nginx-Konfiguration erstellt (HTTP-only, SSL wird später aktiviert)"
 else
-    echo "ℹ️  Lokale Nginx-Konfiguration existiert bereits, wird beibehalten"
+    echo "ℹ️  Lokale Nginx-Konfiguration existiert bereits"
+    # Check if it has SSL and certificates don't exist - fix it
+    if grep -q "ssl_certificate" infra/nginx/conf.d/flipread.local.conf 2>/dev/null; then
+        if ! docker compose exec -T nginx test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
+            echo "⚠️  Konfiguration hat SSL, aber Zertifikate fehlen. Passe an..."
+            if [ -f scripts/fix-nginx-ssl.sh ]; then
+                bash scripts/fix-nginx-ssl.sh
+            fi
+        fi
+    fi
 fi
 
 # SSL is now enabled in both dev and production mode
@@ -448,79 +554,87 @@ echo "=========================================="
 echo "Richte SSL-Zertifikat ein..."
 echo "=========================================="
 
-# Start nginx first (needed for certbot webroot validation)
-echo "Starte Nginx für SSL-Setup..."
+# First, start nginx without SSL (HTTP only) so certbot can validate
+echo "Starte Nginx ohne SSL für Certbot-Validierung..."
+if [ -f scripts/fix-nginx-ssl.sh ]; then
+    bash scripts/fix-nginx-ssl.sh
+fi
 docker compose up -d nginx
 
 # Wait for nginx to be ready
 echo "Warte auf Nginx..."
-sleep 5
+sleep 10
 
-# Run certbot in background with timeout to prevent hanging
-echo "Versuche SSL-Zertifikat zu erstellen..."
-echo "Hinweis: Dies kann einige Minuten dauern..."
-echo "Wenn die Domain nicht auf diesen Server zeigt, wird dies fehlschlagen (das ist OK)."
-echo ""
-
-# Run certbot in background and monitor it
-(
-    docker compose run --rm certbot certonly --webroot \
-      --webroot-path=/var/www/certbot \
-      --email "$EMAIL" \
-      --agree-tos \
-      --no-eff-email \
-      --non-interactive \
-      -d "$DOMAIN" \
-      -d "www.$DOMAIN" > /tmp/certbot_output.log 2>&1
-    echo $? > /tmp/certbot_exit_code.txt
-) &
-CERTBOT_PID=$!
-
-# Wait max 90 seconds for certbot
-CERTBOT_WAIT=0
-CERTBOT_MAX_WAIT=90
-while [ $CERTBOT_WAIT -lt $CERTBOT_MAX_WAIT ]; do
-    if ! kill -0 $CERTBOT_PID 2>/dev/null; then
-        # Process finished
-        break
-    fi
-    sleep 2
-    CERTBOT_WAIT=$((CERTBOT_WAIT + 2))
-    if [ $((CERTBOT_WAIT % 10)) -eq 0 ]; then
-        echo "Warte auf Certbot... ($CERTBOT_WAIT/$CERTBOT_MAX_WAIT Sekunden)"
-    fi
-done
-
-# Kill certbot if still running
-if kill -0 $CERTBOT_PID 2>/dev/null; then
+# Check if nginx is running
+if ! docker compose ps nginx | grep -q "Up"; then
+    echo "⚠️  Nginx startet nicht. Prüfe Logs:"
+    docker compose logs --tail=20 nginx
     echo ""
-    echo "⚠️  Certbot läuft zu lange, breche ab..."
-    kill $CERTBOT_PID 2>/dev/null || true
-    sleep 2
-    kill -9 $CERTBOT_PID 2>/dev/null || true
-    CERTBOT_EXIT=1
-else
-    # Wait for process to fully exit
-    wait $CERTBOT_PID 2>/dev/null || true
-    CERTBOT_EXIT=$(cat /tmp/certbot_exit_code.txt 2>/dev/null || echo "1")
+    echo "Versuche trotzdem, SSL-Zertifikat zu erstellen..."
 fi
 
-# Check result
+# Run certbot to get SSL certificates
+echo "Erstelle SSL-Zertifikat mit Certbot..."
+echo "Hinweis: Dies kann 1-2 Minuten dauern..."
+echo ""
+
+CERTBOT_EXIT=1
+if docker compose run --rm certbot certonly --webroot \
+  --webroot-path=/var/www/certbot \
+  --email "$EMAIL" \
+  --agree-tos \
+  --no-eff-email \
+  --non-interactive \
+  -d "$DOMAIN" \
+  -d "www.$DOMAIN" 2>&1 | tee /tmp/certbot_output.log; then
+    CERTBOT_EXIT=0
+fi
+
+# Check result and update nginx config accordingly
 if [ "$CERTBOT_EXIT" = "0" ]; then
+    echo ""
     echo "✅ SSL-Zertifikat erfolgreich erstellt"
+    echo ""
+    echo "Stelle SSL-Konfiguration wieder her..."
+    
+    # Restore original SSL config if backup exists
+    if [ -f infra/nginx/conf.d/flipread.local.conf.backup ]; then
+        mv infra/nginx/conf.d/flipread.local.conf.backup infra/nginx/conf.d/flipread.local.conf
+        echo "✅ SSL-Konfiguration wiederhergestellt"
+    else
+        # Recreate SSL config from template
+        sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+        echo "✅ SSL-Konfiguration neu erstellt"
+    fi
+    
+    # Restart nginx with SSL
+    echo ""
+    echo "Starte Nginx mit SSL..."
+    docker compose restart nginx || docker compose up -d nginx
+    sleep 5
+    
+    # Verify nginx is running
+    if docker compose ps nginx | grep -q "Up"; then
+        echo "✅ Nginx läuft mit SSL"
+    else
+        echo "⚠️  Nginx startet nicht. Prüfe Logs:"
+        docker compose logs --tail=20 nginx
+    fi
 else
     echo ""
     echo "⚠️  SSL-Zertifikat konnte nicht erstellt werden."
     echo "Letzte Ausgabe:"
-    tail -15 /tmp/certbot_output.log 2>/dev/null | sed 's/^/  /' || echo "  (keine Ausgabe verfügbar)"
+    tail -20 /tmp/certbot_output.log 2>/dev/null | sed 's/^/  /' || echo "  (keine Ausgabe verfügbar)"
     echo ""
     echo "Mögliche Gründe:"
     echo "  - Domain zeigt nicht auf diesen Server"
     echo "  - Port 80 ist nicht erreichbar"
     echo "  - Let's Encrypt Rate Limit erreicht"
     echo ""
-    echo "Nginx läuft trotzdem. Sie können SSL später manuell einrichten:"
-    echo "  docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot -d $DOMAIN"
+    echo "Nginx läuft ohne SSL. Sie können SSL später manuell einrichten:"
+    echo "  1. docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot -d $DOMAIN"
+    echo "  2. bash scripts/fix-nginx-ssl.sh (um SSL-Konfiguration wiederherzustellen)"
+    echo "  3. docker compose restart nginx"
 fi
 
 echo ""
