@@ -645,18 +645,20 @@ if [ "$CERTBOT_EXIT" = "0" ]; then
     echo ""
     echo "Stelle SSL-Konfiguration wieder her..."
     
-    # Restore original SSL config if backup exists, but ensure domain is correct
-    if [ -f infra/nginx/conf.d/flipread.local.conf.backup ]; then
-        # Restore backup and update domain if needed
-        mv infra/nginx/conf.d/flipread.local.conf.backup infra/nginx/conf.d/flipread.local.conf
-        # Ensure domain is correct in restored config
-        sed -i "s|server_name.*|server_name $DOMAIN;|g" infra/nginx/conf.d/flipread.local.conf
-        sed -i "s|/etc/letsencrypt/live/[^/]*|/etc/letsencrypt/live/$DOMAIN|g" infra/nginx/conf.d/flipread.local.conf
-        echo "✅ SSL-Konfiguration wiederhergestellt und Domain aktualisiert"
+    # Always recreate SSL config from template to ensure it's correct
+    # Don't use backup - it might be HTTP-only
+    echo "Erstelle SSL-Konfiguration aus Template..."
+    sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    
+    # Verify the SSL config was created correctly
+    if grep -q "listen 443 ssl" infra/nginx/conf.d/flipread.local.conf && \
+       grep -q "ssl_certificate" infra/nginx/conf.d/flipread.local.conf && \
+       grep -q "server_name $DOMAIN" infra/nginx/conf.d/flipread.local.conf; then
+        echo "✅ SSL-Konfiguration erstellt (mit HTTPS)"
     else
-        # Recreate SSL config from template
-        sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
-        echo "✅ SSL-Konfiguration neu erstellt"
+        echo "❌ Fehler: SSL-Konfiguration wurde nicht korrekt erstellt!"
+        echo "Prüfe Template: infra/nginx/conf.d/flipread.conf"
+        exit 1
     fi
     
     # Restart nginx with SSL
@@ -665,38 +667,56 @@ if [ "$CERTBOT_EXIT" = "0" ]; then
     
     # Test nginx configuration first
     echo "Teste Nginx-Konfiguration..."
-    if ! docker compose exec -T nginx nginx -t 2>&1 | grep -q "successful"; then
-        echo "⚠️  Nginx-Konfiguration hat Fehler:"
-        docker compose exec -T nginx nginx -t 2>&1
-        echo ""
-        echo "Versuche trotzdem, Nginx zu starten..."
-    else
+    NGINX_TEST=$(docker compose exec -T nginx nginx -t 2>&1)
+    if echo "$NGINX_TEST" | grep -q "successful"; then
         echo "✅ Nginx-Konfiguration ist gültig"
+    else
+        echo "❌ Nginx-Konfiguration hat Fehler:"
+        echo "$NGINX_TEST"
+        echo ""
+        echo "Prüfe die Konfiguration:"
+        echo "  cat infra/nginx/conf.d/flipread.local.conf | head -40"
+        exit 1
     fi
     
+    # Restart nginx
     docker compose restart nginx || docker compose up -d nginx
     sleep 5
     
     # Verify nginx is running
-    if docker compose ps nginx | grep -q "Up"; then
-        echo "✅ Nginx läuft"
-        
-        # Test if SSL is working
-        echo ""
-        echo "Teste HTTPS-Verbindung..."
-        sleep 2
-        if curl -f -s -k -o /dev/null https://localhost/health 2>/dev/null; then
-            echo "✅ HTTPS funktioniert!"
-        else
-            echo "⚠️  HTTPS funktioniert noch nicht. Prüfe Logs:"
-            docker compose logs --tail=30 nginx
-            echo ""
-            echo "Führen Sie aus für weitere Diagnose:"
-            echo "  bash scripts/check-ssl.sh $DOMAIN"
-        fi
-    else
+    if ! docker compose ps nginx | grep -q "Up"; then
         echo "❌ Nginx startet nicht. Logs:"
         docker compose logs --tail=30 nginx
+        exit 1
+    fi
+    
+    echo "✅ Nginx läuft"
+    
+    # Test if SSL is working
+    echo ""
+    echo "Teste HTTPS-Verbindung..."
+    sleep 3
+    
+    # Test multiple times to ensure it's working
+    HTTPS_WORKING=false
+    for i in 1 2 3; do
+        HTTP_CODE=$(curl -f -s -k -o /dev/null -w "%{http_code}" https://localhost/health 2>/dev/null || echo "000")
+        if [ "$HTTP_CODE" = "200" ]; then
+            HTTPS_WORKING=true
+            break
+        fi
+        sleep 2
+    done
+    
+    if [ "$HTTPS_WORKING" = true ]; then
+        echo "✅ HTTPS funktioniert!"
+    else
+        echo "⚠️  HTTPS funktioniert noch nicht."
+        echo ""
+        echo "Prüfe:"
+        echo "  1. Nginx-Logs: docker compose logs --tail=30 nginx"
+        echo "  2. SSL-Konfiguration: grep -A 5 'listen 443' infra/nginx/conf.d/flipread.local.conf"
+        echo "  3. Zertifikate: docker compose exec nginx ls -la /etc/letsencrypt/live/$DOMAIN/"
         echo ""
         echo "Führen Sie aus für weitere Diagnose:"
         echo "  bash scripts/check-ssl.sh $DOMAIN"
