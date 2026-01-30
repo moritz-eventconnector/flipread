@@ -12,10 +12,38 @@ echo "Passe Nginx-Konfiguration an (SSL optional)..."
 
 # Check if SSL certificates exist
 CERT_PATH="/etc/letsencrypt/live"
-DOMAIN=$(grep -oP 'server_name \K[^ ]+' "$NGINX_CONF" 2>/dev/null | head -1)
+
+# Use DOMAIN from environment if provided, otherwise extract from config
+if [ -z "${DOMAIN:-}" ]; then
+    DOMAIN=$(grep -oP 'server_name \K[^; ]+' "$NGINX_CONF" 2>/dev/null | head -1 | tr -d ';' | xargs)
+fi
+
+# If domain not found in nginx config, try to get it from .env
+if [ -z "$DOMAIN" ]; then
+    if [ -f .env ]; then
+        DOMAIN=$(grep -E '^SITE_URL=' .env 2>/dev/null | sed 's|.*https\?://||' | sed 's|/.*||' | head -1 | xargs)
+    fi
+fi
+
+# If still empty, try to get from ALLOWED_HOSTS
+if [ -z "$DOMAIN" ]; then
+    if [ -f .env ]; then
+        DOMAIN=$(grep -E '^ALLOWED_HOSTS=' .env 2>/dev/null | sed 's/.*=//' | tr ',' ' ' | awk '{print $1}' | tr -d "'\"" | xargs)
+    fi
+fi
 
 if [ -z "$DOMAIN" ]; then
-    echo "Fehler: Domain nicht in Nginx-Konfiguration gefunden"
+    echo "Fehler: Domain nicht gefunden. Bitte geben Sie die Domain ein:"
+    read -p "Domain: " DOMAIN
+    if [ -z "$DOMAIN" ]; then
+        echo "Fehler: Domain ist erforderlich"
+        exit 1
+    fi
+fi
+
+# Validate domain (should not contain spaces or special characters that break nginx config)
+if [[ "$DOMAIN" =~ [[:space:]] ]]; then
+    echo "❌ Fehler: Domain enthält Leerzeichen: '$DOMAIN'"
     exit 1
 fi
 

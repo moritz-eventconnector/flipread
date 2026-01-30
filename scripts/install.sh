@@ -332,13 +332,40 @@ echo "=========================================="
 # Create local nginx config - start with HTTP-only (SSL will be added after certbot)
 echo ""
 echo "Erstelle lokale Nginx-Konfiguration..."
+# Validate domain
+if [ -z "$DOMAIN" ]; then
+    echo "❌ Fehler: DOMAIN ist leer!"
+    exit 1
+fi
+
 if [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
     # Create HTTP-only config first (SSL will be enabled after certificates are created)
     # First create the config with domain replacement
-    sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    # Escape domain for sed (in case it contains special characters)
+    DOMAIN_ESCAPED=$(printf '%s\n' "$DOMAIN" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    sed "s/flipread.de/$DOMAIN_ESCAPED/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    
+    # Verify domain was replaced correctly
+    if ! grep -q "server_name $DOMAIN" infra/nginx/conf.d/flipread.local.conf; then
+        echo "❌ Fehler: Domain-Ersetzung fehlgeschlagen!"
+        echo "Erwartet: server_name $DOMAIN"
+        echo "Aktuelle Konfiguration (Zeile 13):"
+        sed -n '13p' infra/nginx/conf.d/flipread.local.conf
+        exit 1
+    fi
+    
+    # Verify no empty server_name
+    if grep -q "server_name ;" infra/nginx/conf.d/flipread.local.conf; then
+        echo "❌ Fehler: server_name ist leer in der Konfiguration!"
+        echo "Zeile 13:"
+        sed -n '13p' infra/nginx/conf.d/flipread.local.conf
+        exit 1
+    fi
+    
     # Then convert to HTTP-only using fix script
     if [ -f scripts/fix-nginx-ssl.sh ]; then
-        bash scripts/fix-nginx-ssl.sh
+        # Pass domain to fix script
+        DOMAIN="$DOMAIN" bash scripts/fix-nginx-ssl.sh
     else
         # Fallback: create HTTP-only config manually
         cat > infra/nginx/conf.d/flipread.local.conf <<EOF
@@ -438,7 +465,7 @@ else
         if ! docker compose exec -T nginx test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
             echo "⚠️  Konfiguration hat SSL, aber Zertifikate fehlen. Passe an..."
             if [ -f scripts/fix-nginx-ssl.sh ]; then
-                bash scripts/fix-nginx-ssl.sh
+                DOMAIN="$DOMAIN" bash scripts/fix-nginx-ssl.sh
             fi
         fi
     fi
@@ -674,7 +701,7 @@ echo "=========================================="
 # First, ensure nginx is running with HTTP-only config
 echo "Stelle sicher, dass Nginx läuft (HTTP-only)..."
 if [ -f scripts/fix-nginx-ssl.sh ]; then
-    bash scripts/fix-nginx-ssl.sh
+    DOMAIN="$DOMAIN" bash scripts/fix-nginx-ssl.sh
 fi
 docker compose up -d nginx
 
@@ -766,7 +793,22 @@ if [ "$CERTBOT_EXIT" = "0" ]; then
     # Always recreate SSL config from template to ensure it's correct
     # Don't use backup - it might be HTTP-only
     echo "Erstelle SSL-Konfiguration aus Template..."
-    sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    # Escape domain for sed (in case it contains special characters)
+    DOMAIN_ESCAPED=$(printf '%s\n' "$DOMAIN" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    sed "s/flipread.de/$DOMAIN_ESCAPED/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    
+    # Verify domain was replaced correctly
+    if ! grep -q "server_name $DOMAIN" infra/nginx/conf.d/flipread.local.conf; then
+        echo "❌ Fehler: Domain-Ersetzung fehlgeschlagen!"
+        echo "Erwartet: server_name $DOMAIN"
+        exit 1
+    fi
+    
+    # Verify no empty server_name
+    if grep -q "server_name ;" infra/nginx/conf.d/flipread.local.conf; then
+        echo "❌ Fehler: server_name ist leer in der Konfiguration!"
+        exit 1
+    fi
     
     # Verify the SSL config was created correctly
     if grep -q "listen 443 ssl" infra/nginx/conf.d/flipread.local.conf && \

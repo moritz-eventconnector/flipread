@@ -62,9 +62,25 @@ fi
 # Recreate local nginx config if domain was extracted but file doesn't exist
 if [ ! -z "$DOMAIN" ] && [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
     echo "Erstelle lokale Nginx-Konfiguration neu..."
-    sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    # Escape domain for sed (in case it contains special characters)
+    DOMAIN_ESCAPED=$(printf '%s\n' "$DOMAIN" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    sed "s/flipread.de/$DOMAIN_ESCAPED/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
     # Update SSL paths
     sed -i "s|/etc/letsencrypt/live/flipread.de|/etc/letsencrypt/live/$DOMAIN|g" infra/nginx/conf.d/flipread.local.conf
+    
+    # Verify domain was replaced correctly
+    if ! grep -q "server_name $DOMAIN" infra/nginx/conf.d/flipread.local.conf; then
+        echo "❌ Fehler: Domain-Ersetzung fehlgeschlagen!"
+        echo "Erwartet: server_name $DOMAIN"
+        exit 1
+    fi
+    
+    # Verify no empty server_name
+    if grep -q "server_name ;" infra/nginx/conf.d/flipread.local.conf; then
+        echo "❌ Fehler: server_name ist leer in der Konfiguration!"
+        exit 1
+    fi
+    
     echo "✅ Lokale Nginx-Konfiguration neu erstellt"
 fi
 
