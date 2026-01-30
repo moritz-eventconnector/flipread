@@ -169,14 +169,19 @@ class ProjectViewSet(viewsets.ModelViewSet):
         pages_list = pages_data.get('pages', [])
         
         # Create pages array for JavaScript
-        pages_js = json.dumps([
-            {
-                'src': f'./pages/{page.get("file", f"page-{page.get("page_number", i+1):03d}.jpg")}',
+        pages_list_js = []
+        for i, page in enumerate(pages_list):
+            # Get filename from page data or generate default
+            page_file = page.get("file")
+            if not page_file:
+                page_number = page.get("page_number", i + 1)
+                page_file = f"page-{page_number:03d}.jpg"
+            pages_list_js.append({
+                'src': f'./pages/{page_file}',
                 'width': page.get('width', 800),
                 'height': page.get('height', 600),
-            }
-            for i, page in enumerate(pages_list)
-        ])
+            })
+        pages_js = json.dumps(pages_list_js)
         
         # Standalone HTML with embedded viewer - uses local lib/page-flip.browser.js
         html = f"""<!DOCTYPE html>
