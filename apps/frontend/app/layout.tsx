@@ -20,12 +20,14 @@ export const metadata: Metadata = {
   publisher: 'FlipRead',
   icons: {
     icon: [
-      { url: '/favicon.png', type: 'image/png', sizes: 'any' },
+      { url: '/favicon.png', type: 'image/png', sizes: '32x32' },
+      { url: '/favicon.png', type: 'image/png', sizes: '16x16' },
       { url: '/favicon.ico', sizes: 'any' },
     ],
     apple: [
-      { url: '/favicon.png', type: 'image/png' },
+      { url: '/favicon.png', type: 'image/png', sizes: '180x180' },
     ],
+    shortcut: '/favicon.ico',
   },
   formatDetection: {
     email: false,

@@ -18,6 +18,12 @@ from .models import StripeCustomer, Payment, Subscription, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
+# CRITICAL: Initialize Stripe module immediately on import
+# This ensures that stripe.checkout and other submodules are available
+# The Stripe module loads its internal structure when api_key is first set
+# We need to set it early, even if it's a placeholder, to ensure the module structure is loaded
+# However, we'll only set a real key if it's valid
+
 # Initialize Stripe - ALWAYS set the key if available
 # The api_key MUST be set before any Stripe API calls
 # Setting it to None breaks the stripe module's internal structure
@@ -41,10 +47,21 @@ def ensure_stripe_api_key():
         logger.warning(f"STRIPE_SECRET_KEY does not start with 'sk_' - likely invalid")
         return False
     
-    # Set the API key - we know it's valid at this point
-    if not stripe.api_key or stripe.api_key != settings.STRIPE_SECRET_KEY:
-        stripe.api_key = settings.STRIPE_SECRET_KEY
-        logger.info("Stripe API key set/updated")
+    # CRITICAL: Set the API key BEFORE accessing any Stripe modules
+    # The Stripe module loads its internal modules (like checkout) only when api_key is set
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    logger.info("Stripe API key set/updated")
+    
+    # Verify that Stripe modules are now available
+    # This forces the module to load its internal structure
+    try:
+        # Try to access checkout module to ensure it's loaded
+        _ = stripe.checkout
+        _ = stripe.checkout.Session
+        logger.debug("Stripe checkout module verified")
+    except AttributeError as e:
+        logger.error(f"Stripe checkout module not available after setting api_key: {e}")
+        return False
     
     # Final verification
     if not stripe.api_key:
@@ -196,6 +213,14 @@ def checkout_download(request):
         logger.error("stripe.api_key is None - cannot create checkout session")
         return Response(
             {'error': 'Payment system error. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    # Verify that stripe.checkout.Session is available
+    if not hasattr(stripe, 'checkout') or not hasattr(stripe.checkout, 'Session'):
+        logger.error("stripe.checkout.Session is not available - Stripe module not properly initialized")
+        return Response(
+            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
@@ -361,6 +386,15 @@ def checkout_hosting(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
+    # Verify that stripe.checkout.Session is available
+    # This ensures the Stripe module has loaded its internal structure
+    if not hasattr(stripe, 'checkout') or not hasattr(stripe.checkout, 'Session'):
+        logger.error("stripe.checkout.Session is not available - Stripe module not properly initialized")
+        return Response(
+            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
     try:
         checkout_session = stripe.checkout.Session.create(
             customer=stripe_customer.stripe_customer_id,
@@ -427,6 +461,14 @@ def billing_portal(request):
         logger.error("stripe.api_key is None - cannot create billing portal session")
         return Response(
             {'error': 'Payment system error. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+    # Verify that stripe.billing_portal.Session is available
+    if not hasattr(stripe, 'billing_portal') or not hasattr(stripe.billing_portal, 'Session'):
+        logger.error("stripe.billing_portal.Session is not available - Stripe module not properly initialized")
+        return Response(
+            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     

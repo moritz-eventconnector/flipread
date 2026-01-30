@@ -157,8 +157,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const pageWidth = firstPage?.width || 800
   const pageHeight = firstPage?.height || 600
   const aspectRatio = pageWidth / pageHeight
-  const baseWidth = 800
-  const baseHeight = Math.round(baseWidth / aspectRatio)
+  // Apply zoom to flipbook dimensions to keep pages connected
+  const baseWidth = Math.round(800 * zoom)
+  const baseHeight = Math.round((800 * zoom) / aspectRatio)
 
   const totalPages = project.pages_json?.total_pages || 0
 
@@ -223,6 +224,23 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     return () => clearTimeout(timer)
   }, [currentPage, imageUrls.length])
 
+  // Update flipbook size when zoom changes
+  useEffect(() => {
+    if (!flipBookRef.current) return
+    
+    try {
+      const pageFlip = flipBookRef.current.getPageFlip?.()
+      if (pageFlip && typeof pageFlip.updateSize === 'function') {
+        // Update flipbook size based on zoom
+        const newWidth = Math.round(800 * zoom)
+        const newHeight = Math.round((800 * zoom) / aspectRatio)
+        pageFlip.updateSize(newWidth, newHeight)
+      }
+    } catch (error) {
+      console.warn('FlipbookViewer: Could not update size', error)
+    }
+  }, [zoom, aspectRatio])
+
   const handleFlip = (e: any) => {
     const newPage = e.data
     setCurrentPage(newPage)
@@ -238,35 +256,26 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     
     if (flipBookRef.current) {
       try {
-        // Try multiple ways to access the pageFlip instance
-        let pageFlip = null
+        // react-pageflip: Use getPageFlip() to get the instance
+        const pageFlip = flipBookRef.current.getPageFlip?.()
         
-        if (flipBookRef.current.pageFlip) {
-          pageFlip = flipBookRef.current.pageFlip
-        } else if (typeof flipBookRef.current.getPageFlip === 'function') {
-          pageFlip = flipBookRef.current.getPageFlip()
+        if (pageFlip) {
+          // Use turnToPage for direct navigation
+          if (typeof pageFlip.turnToPage === 'function') {
+            pageFlip.turnToPage(pageIndex)
+            setCurrentPage(pageIndex)
+            const url = new URL(window.location.href)
+            url.searchParams.set('page', (pageIndex + 1).toString())
+            window.history.pushState({}, '', url.toString())
+            return
+          }
         }
         
-        if (pageFlip && typeof pageFlip.flip === 'function') {
-          // Use flip method with page index
-          pageFlip.flip(pageIndex)
-          setCurrentPage(pageIndex)
-          const url = new URL(window.location.href)
-          url.searchParams.set('page', (pageIndex + 1).toString())
-          window.history.pushState({}, '', url.toString())
-        } else if (pageFlip && typeof pageFlip.turnToPage === 'function') {
-          pageFlip.turnToPage(pageIndex)
-          setCurrentPage(pageIndex)
-          const url = new URL(window.location.href)
-          url.searchParams.set('page', (pageIndex + 1).toString())
-          window.history.pushState({}, '', url.toString())
-        } else {
-          // Fallback: directly update state
-          setCurrentPage(pageIndex)
-          const url = new URL(window.location.href)
-          url.searchParams.set('page', (pageIndex + 1).toString())
-          window.history.pushState({}, '', url.toString())
-        }
+        // Fallback: directly update state
+        setCurrentPage(pageIndex)
+        const url = new URL(window.location.href)
+        url.searchParams.set('page', (pageIndex + 1).toString())
+        window.history.pushState({}, '', url.toString())
       } catch (error) {
         console.error('FlipbookViewer: Could not navigate to page', error)
         // Fallback: directly update state
@@ -282,23 +291,13 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     if (!flipBookRef.current || currentPage >= totalPages - 1) return
     
     try {
-      // react-pageflip: The ref directly exposes the pageFlip instance methods
-      if (flipBookRef.current && typeof flipBookRef.current.pageFlip === 'object') {
-        const pageFlip = flipBookRef.current.pageFlip
-        if (pageFlip && typeof pageFlip.flipNext === 'function') {
-          pageFlip.flipNext()
-        }
-      } else if (flipBookRef.current && typeof flipBookRef.current.flipNext === 'function') {
-        // Alternative: direct method on ref
-        flipBookRef.current.flipNext()
-      } else if (flipBookRef.current && typeof flipBookRef.current.getPageFlip === 'function') {
-        // Fallback: getPageFlip method
-        const pageFlip = flipBookRef.current.getPageFlip()
-        if (pageFlip && typeof pageFlip.flipNext === 'function') {
-          pageFlip.flipNext()
-        }
+      // react-pageflip: Use getPageFlip() to get the instance
+      const pageFlip = flipBookRef.current.getPageFlip?.()
+      
+      if (pageFlip && typeof pageFlip.flipNext === 'function') {
+        pageFlip.flipNext()
       } else {
-        // Last resort: try to navigate programmatically
+        // Fallback: navigate directly
         const newPage = Math.min(currentPage + 1, totalPages - 1)
         goToPage(newPage)
       }
@@ -314,23 +313,13 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     if (!flipBookRef.current || currentPage <= 0) return
     
     try {
-      // react-pageflip: The ref directly exposes the pageFlip instance methods
-      if (flipBookRef.current && typeof flipBookRef.current.pageFlip === 'object') {
-        const pageFlip = flipBookRef.current.pageFlip
-        if (pageFlip && typeof pageFlip.flipPrev === 'function') {
-          pageFlip.flipPrev()
-        }
-      } else if (flipBookRef.current && typeof flipBookRef.current.flipPrev === 'function') {
-        // Alternative: direct method on ref
-        flipBookRef.current.flipPrev()
-      } else if (flipBookRef.current && typeof flipBookRef.current.getPageFlip === 'function') {
-        // Fallback: getPageFlip method
-        const pageFlip = flipBookRef.current.getPageFlip()
-        if (pageFlip && typeof pageFlip.flipPrev === 'function') {
-          pageFlip.flipPrev()
-        }
+      // react-pageflip: Use getPageFlip() to get the instance
+      const pageFlip = flipBookRef.current.getPageFlip?.()
+      
+      if (pageFlip && typeof pageFlip.flipPrev === 'function') {
+        pageFlip.flipPrev()
       } else {
-        // Last resort: try to navigate programmatically
+        // Fallback: navigate directly
         const newPage = Math.max(currentPage - 1, 0)
         goToPage(newPage)
       }
@@ -594,17 +583,17 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             backgroundImage: `url(${imageUrls[currentPage]})`,
             backgroundRepeat: 'no-repeat',
             // Calculate background size: image should be magnified by magnifierZoom factor
-            // backgroundSize in %: 100% = original size, 50% = 2x zoom, 33% = 3x zoom
+            // backgroundSize in %: 100% = original size, 50% = 2x zoom (image appears 2x larger)
             // For a 2x zoom, we want the image to be 50% of its original size in the lens
+            // This makes it appear 2x larger
             backgroundSize: `${100 / magnifierZoom}%`,
             // Background position: Center the magnified area on the mouse position
-            // The position needs to be adjusted to account for the lens size
-            // When backgroundSize is 50% (2x zoom), we need to offset by half the lens size
-            // Formula: position = mousePosition% - (lensSize / (imageSize * zoomFactor) * 100
-            // For a 200px lens with 2x zoom on an 800px image:
-            // offset = (200 / (800 * 2)) * 100 = 12.5%
-            // So position = mouseX% - 12.5%
-            backgroundPosition: `${magnifierPosition.x}% ${magnifierPosition.y}%`,
+            // The position is already in percentage (0-100%), so we can use it directly
+            // For proper centering, we need to adjust by half the lens size relative to the zoomed image
+            // When backgroundSize is 50% (2x zoom), the image is 2x larger, so we need to offset
+            // Formula: position = mousePosition% - (50% / magnifierZoom)
+            // For 2x zoom: position = mouseX% - 25%
+            backgroundPosition: `${Math.max(0, Math.min(100, magnifierPosition.x - (50 / magnifierZoom)))}% ${Math.max(0, Math.min(100, magnifierPosition.y - (50 / magnifierZoom)))}%`,
             display: 'block',
             left: `${magnifierPosition.mouseX - 100}px`,
             top: `${magnifierPosition.mouseY - 100}px`,
@@ -677,10 +666,10 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             width={baseWidth}
             height={baseHeight}
             size="stretch"
-            minWidth={400}
-            maxWidth={1200}
-            minHeight={300}
-            maxHeight={900}
+            minWidth={Math.round(400 * zoom)}
+            maxWidth={Math.round(1200 * zoom)}
+            minHeight={Math.round(300 * zoom)}
+            maxHeight={Math.round(900 * zoom)}
             maxShadowOpacity={0.5}
             showCover={true}
             flippingTime={1000}
@@ -692,7 +681,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             startPage={currentPage}
             drawShadow={true}
             startZIndex={0}
-            autoSize={true}
+            autoSize={false}
             clickEventForward={true}
             useMouseEvents={!magnifierActive}
             swipeDistance={30}
