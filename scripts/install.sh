@@ -116,7 +116,7 @@ if [ "$DEV_MODE" = true ]; then
 DEBUG=True
 SECRET_KEY=$SECRET_KEY
 ALLOWED_HOSTS=$DOMAIN,www.$DOMAIN,localhost,127.0.0.1
-SITE_URL=http://$DOMAIN
+SITE_URL=https://$DOMAIN
 
 # Database
 POSTGRES_DB=flipread
@@ -142,9 +142,9 @@ DEFAULT_FROM_EMAIL=noreply@$DOMAIN
 ENABLE_EMAIL_VERIFICATION=False
 
 # Frontend
-NEXT_PUBLIC_API_URL=http://$DOMAIN/api
+NEXT_PUBLIC_API_URL=https://$DOMAIN/api
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$STRIPE_PUBLISHABLE_KEY
-NEXT_PUBLIC_SITE_URL=http://$DOMAIN
+NEXT_PUBLIC_SITE_URL=https://$DOMAIN
 EOF
 else
     cat > .env <<EOF
@@ -193,10 +193,7 @@ echo "=========================================="
 
 ufw allow 22/tcp
 ufw allow 80/tcp
-
-if [ "$DEV_MODE" = false ]; then
-    ufw allow 443/tcp
-fi
+ufw allow 443/tcp  # SSL wird auch im DEV MODE aktiviert
 
 ufw --force enable
 
@@ -209,16 +206,45 @@ echo "=========================================="
 sed -i "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf
 sed -i "s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf
 
-# In dev mode, disable HTTPS redirect
+# SSL is now enabled in both dev and production mode
+# No need to disable HTTPS redirect
+
+# Check if containers/volumes exist and ask to remove them
 if [ "$DEV_MODE" = true ]; then
-    # Comment out HTTPS redirect in nginx config
-    sed -i 's/return 301 https:\/\/$host$request_uri;/# return 301 https:\/\/$host$request_uri; # DEV MODE/g' infra/nginx/conf.d/flipread.conf
-    # Also comment out SSL server block (we'll use HTTP only)
-    sed -i 's/listen 443 ssl http2;/# listen 443 ssl http2; # DEV MODE/g' infra/nginx/conf.d/flipread.conf
+    if docker compose ps -q 2>/dev/null | grep -q . || docker volume ls -q 2>/dev/null | grep -q flipread; then
+        echo ""
+        echo "⚠️  Es existieren bereits Container oder Volumes."
+        echo "Im DEV MODE können diese gelöscht werden."
+        read -p "Bestehende Container und Volumes löschen? (yes/no) [no]: " REMOVE_EXISTING
+        REMOVE_EXISTING=${REMOVE_EXISTING:-no}
+        
+        if [ "$REMOVE_EXISTING" = "yes" ]; then
+            echo ""
+            echo "Stoppe und entferne bestehende Container und Volumes..."
+            docker compose down -v 2>/dev/null || true
+            echo "✅ Alte Daten wurden gelöscht"
+        else
+            echo ""
+            echo "Bestehende Container werden gestoppt (Volumes bleiben erhalten)..."
+            docker compose down 2>/dev/null || true
+        fi
+    fi
+else
+    # In production, just stop existing containers (don't remove volumes)
+    if docker compose ps -q 2>/dev/null | grep -q .; then
+        echo ""
+        echo "Stoppe bestehende Container (Volumes bleiben erhalten)..."
+        docker compose down 2>/dev/null || true
+    fi
 fi
 
 # Build and start containers
+echo ""
+echo "Baue Container..."
 docker compose build
+
+echo ""
+echo "Starte Container..."
 docker compose up -d
 
 echo "Warte auf Datenbank..."
@@ -279,34 +305,41 @@ echo "=========================================="
 
 docker compose exec -T backend python manage.py collectstatic --noinput
 
-# SSL setup (skip in dev mode)
-if [ "$DEV_MODE" = false ]; then
-    echo ""
-    echo "=========================================="
-    echo "Richte SSL-Zertifikat ein..."
-    echo "=========================================="
-    
-    # Stop nginx temporarily
-    docker compose stop nginx
-    
-    # Run certbot
-    docker compose run --rm certbot certonly --webroot \
-      --webroot-path=/var/www/certbot \
-      --email "$EMAIL" \
-      --agree-tos \
-      --no-eff-email \
-      -d "$DOMAIN" \
-      -d "www.$DOMAIN"
-    
-    # Start nginx
-    docker compose start nginx
+# SSL setup (also in dev mode)
+echo ""
+echo "=========================================="
+echo "Richte SSL-Zertifikat ein..."
+echo "=========================================="
+
+# Stop nginx temporarily for SSL setup
+docker compose stop nginx 2>/dev/null || true
+
+# Run certbot (may fail if domain not pointing to server)
+echo "Versuche SSL-Zertifikat zu erstellen..."
+if docker compose run --rm certbot certonly --webroot \
+  --webroot-path=/var/www/certbot \
+  --email "$EMAIL" \
+  --agree-tos \
+  --no-eff-email \
+  -d "$DOMAIN" \
+  -d "www.$DOMAIN" 2>&1; then
+    echo "✅ SSL-Zertifikat erfolgreich erstellt"
 else
     echo ""
-    echo "=========================================="
-    echo "DEV MODE: SSL-Setup übersprungen"
-    echo "=========================================="
-    echo "Hinweis: Verwenden Sie http:// statt https://"
+    echo "⚠️  SSL-Zertifikat konnte nicht erstellt werden."
+    echo "Mögliche Gründe:"
+    echo "  - Domain zeigt nicht auf diesen Server"
+    echo "  - Port 80 ist nicht erreichbar"
+    echo "  - Let's Encrypt Rate Limit erreicht"
+    echo ""
+    echo "Nginx wird trotzdem gestartet. Sie können SSL später manuell einrichten:"
+    echo "  docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot -d $DOMAIN"
 fi
+
+# Start nginx (even if SSL failed)
+echo ""
+echo "Starte Nginx..."
+docker compose start nginx || docker compose up -d nginx
 
 echo ""
 echo "=========================================="
@@ -314,13 +347,8 @@ echo "Installation abgeschlossen!"
 echo "=========================================="
 echo ""
 
-if [ "$DEV_MODE" = true ]; then
-    PROTOCOL="http://"
-    echo "⚠️  DEV MODE aktiviert"
-    echo ""
-else
-    PROTOCOL="https://"
-fi
+# SSL is enabled in both modes
+PROTOCOL="https://"
 
 echo "Zugriff:"
 echo "  - Frontend: $PROTOCOL$DOMAIN"
@@ -342,7 +370,7 @@ if [ "$DEV_MODE" = true ]; then
     echo "Hinweis:"
     echo "  - Email und Stripe sind optional"
     echo "  - Download/Publish funktioniert ohne Zahlung"
-    echo "  - SSL ist deaktiviert (http://)"
+    echo "  - SSL ist aktiviert (https://)"
     echo ""
 else
     echo "Nächste Schritte:"
