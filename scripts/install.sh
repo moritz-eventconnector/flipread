@@ -216,12 +216,11 @@ echo ""
 echo "Erstelle lokale Nginx-Konfiguration..."
 if [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
     # Create HTTP-only config first (SSL will be enabled after certificates are created)
+    # First create the config with domain replacement
+    sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    # Then convert to HTTP-only using fix script
     if [ -f scripts/fix-nginx-ssl.sh ]; then
-        # Use the template to create initial config with domain
-        sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf.tmp
-        # Then convert to HTTP-only
         bash scripts/fix-nginx-ssl.sh
-        rm -f infra/nginx/conf.d/flipread.local.conf.tmp
     else
         # Fallback: create HTTP-only config manually
         cat > infra/nginx/conf.d/flipread.local.conf <<EOF
@@ -554,8 +553,8 @@ echo "=========================================="
 echo "Richte SSL-Zertifikat ein..."
 echo "=========================================="
 
-# First, start nginx without SSL (HTTP only) so certbot can validate
-echo "Starte Nginx ohne SSL für Certbot-Validierung..."
+# First, ensure nginx is running with HTTP-only config
+echo "Stelle sicher, dass Nginx läuft (HTTP-only)..."
 if [ -f scripts/fix-nginx-ssl.sh ]; then
     bash scripts/fix-nginx-ssl.sh
 fi
@@ -567,27 +566,54 @@ sleep 10
 
 # Check if nginx is running
 if ! docker compose ps nginx | grep -q "Up"; then
-    echo "⚠️  Nginx startet nicht. Prüfe Logs:"
-    docker compose logs --tail=20 nginx
+    echo "❌ Nginx startet nicht!"
+    echo "Logs:"
+    docker compose logs --tail=30 nginx
     echo ""
-    echo "Versuche trotzdem, SSL-Zertifikat zu erstellen..."
+    echo "Bitte beheben Sie das Problem und führen Sie das Skript erneut aus."
+    exit 1
 fi
 
+echo "✅ Nginx läuft"
+
 # Run certbot to get SSL certificates
+echo ""
 echo "Erstelle SSL-Zertifikat mit Certbot..."
+echo "Domain: $DOMAIN"
+echo "Email: $EMAIL"
 echo "Hinweis: Dies kann 1-2 Minuten dauern..."
 echo ""
 
-CERTBOT_EXIT=1
-if docker compose run --rm certbot certonly --webroot \
-  --webroot-path=/var/www/certbot \
-  --email "$EMAIL" \
-  --agree-tos \
-  --no-eff-email \
-  --non-interactive \
-  -d "$DOMAIN" \
-  -d "www.$DOMAIN" 2>&1 | tee /tmp/certbot_output.log; then
-    CERTBOT_EXIT=0
+# Verify domain variable is set
+if [ -z "$DOMAIN" ]; then
+    echo "❌ Fehler: DOMAIN ist leer!"
+    CERTBOT_EXIT=1
+else
+    # Check if certificates already exist
+    if docker compose exec -T nginx test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
+        echo "✅ SSL-Zertifikate existieren bereits für $DOMAIN"
+        CERTBOT_EXIT=0
+    else
+        echo "Erstelle neue SSL-Zertifikate für $DOMAIN und www.$DOMAIN..."
+        
+        # Delete any existing certificates for this domain first (silently)
+        docker compose run --rm --entrypoint "/bin/sh" certbot -c "certbot delete --cert-name $DOMAIN --non-interactive" 2>/dev/null || true
+        
+        # Use certonly to create new certificates
+        # Override entrypoint because the certbot container has "certbot renew" as entrypoint
+        echo "Führe Certbot aus (dies kann 1-2 Minuten dauern)..."
+        CERTBOT_OUTPUT=$(docker compose run --rm --entrypoint "/bin/sh" certbot -c "certbot certonly --webroot --webroot-path=/var/www/certbot --email $EMAIL --agree-tos --no-eff-email --non-interactive -d $DOMAIN -d www.$DOMAIN --verbose" 2>&1)
+        
+        echo "$CERTBOT_OUTPUT" | tee /tmp/certbot_output.log
+        
+        # Check if certificates were created
+        sleep 2
+        if docker compose exec -T nginx test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
+            CERTBOT_EXIT=0
+        else
+            CERTBOT_EXIT=1
+        fi
+    fi
 fi
 
 # Check result and update nginx config accordingly
@@ -624,17 +650,10 @@ else
     echo ""
     echo "⚠️  SSL-Zertifikat konnte nicht erstellt werden."
     echo "Letzte Ausgabe:"
-    tail -20 /tmp/certbot_output.log 2>/dev/null | sed 's/^/  /' || echo "  (keine Ausgabe verfügbar)"
-    echo ""
-    echo "Mögliche Gründe:"
-    echo "  - Domain zeigt nicht auf diesen Server"
-    echo "  - Port 80 ist nicht erreichbar"
-    echo "  - Let's Encrypt Rate Limit erreicht"
+    tail -30 /tmp/certbot_output.log 2>/dev/null | sed 's/^/  /' || echo "  (keine Ausgabe verfügbar)"
     echo ""
     echo "Nginx läuft ohne SSL. Sie können SSL später manuell einrichten:"
-    echo "  1. docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot -d $DOMAIN"
-    echo "  2. bash scripts/fix-nginx-ssl.sh (um SSL-Konfiguration wiederherzustellen)"
-    echo "  3. docker compose restart nginx"
+    echo "  bash scripts/fix-certbot.sh $DOMAIN $EMAIL"
 fi
 
 echo ""

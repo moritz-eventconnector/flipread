@@ -60,10 +60,34 @@ echo "10. Offene Ports (netstat/ss):"
 echo "----------------------------------------"
 if command -v ss &> /dev/null; then
     ss -tlnp | grep -E ':(80|443|3000)' || echo "Keine relevanten Ports gefunden"
+    echo ""
+    echo "Port 80 Details:"
+    ss -tlnp | grep ":80 " || echo "Port 80 lauscht nicht"
 elif command -v netstat &> /dev/null; then
     netstat -tlnp | grep -E ':(80|443|3000)' || echo "Keine relevanten Ports gefunden"
+    echo ""
+    echo "Port 80 Details:"
+    netstat -tlnp | grep ":80 " || echo "Port 80 lauscht nicht"
 else
     echo "netstat/ss nicht verfügbar"
+fi
+echo ""
+
+echo "10b. Port 80 Erreichbarkeitstest:"
+echo "----------------------------------------"
+if command -v curl &> /dev/null; then
+    if [ -f .env ]; then
+        DOMAIN=$(grep "^SITE_URL=" .env | cut -d'=' -f2 | sed 's|https\?://||' | sed 's|/.*||' | head -1)
+        if [ ! -z "$DOMAIN" ]; then
+            echo "Teste: http://$DOMAIN/.well-known/acme-challenge/test"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$DOMAIN/.well-known/acme-challenge/test" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" != "000" ]; then
+                echo "✅ HTTP-Verbindung funktioniert (HTTP Code: $HTTP_CODE)"
+            else
+                echo "❌ HTTP-Verbindung funktioniert NICHT!"
+            fi
+        fi
+    fi
 fi
 echo ""
 
