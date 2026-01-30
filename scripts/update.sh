@@ -80,6 +80,12 @@ echo ""
 echo "Warte auf Services..."
 sleep 10
 
+# Restart Nginx to reload upstream configuration
+echo ""
+echo "Starte Nginx neu (für Upstream-Konfiguration)..."
+docker compose restart nginx
+sleep 3
+
 # Check if containers are running
 echo ""
 echo "Prüfe Container-Status..."

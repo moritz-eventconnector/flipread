@@ -40,9 +40,18 @@ export default function PreviewPage() {
   const loadProject = async () => {
     try {
       const response = await api.get(`/projects/${params.slug}/preview/`)
+      console.log('PreviewPage: Loaded project data', response.data)
+      console.log('PreviewPage: pages_json', response.data.pages_json)
+      console.log('PreviewPage: pages', response.data.pages)
       setProject(response.data)
-    } catch (error) {
-      router.push('/app/dashboard')
+    } catch (error: any) {
+      console.error('PreviewPage: Error loading project', error)
+      if (error.response?.status === 403 || error.response?.status === 404) {
+        router.push('/app/dashboard')
+      } else {
+        // Show error message
+        alert('Fehler beim Laden der Vorschau: ' + (error.response?.data?.error || error.message))
+      }
     } finally {
       setLoading(false)
     }

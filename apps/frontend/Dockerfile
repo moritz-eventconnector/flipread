@@ -71,7 +71,5 @@ CMD sh -c 'SERVER_FILE=""; \
   fi; \
   echo "Starting Next.js server with: $SERVER_FILE"; \
   echo "Environment: PORT=$PORT HOSTNAME=$HOSTNAME NODE_ENV=$NODE_ENV"; \
-  export PORT=$PORT; \
-  export HOSTNAME=$HOSTNAME; \
-  exec node $SERVER_FILE'
+  exec env PORT=$PORT HOSTNAME=$HOSTNAME NODE_ENV=$NODE_ENV node $SERVER_FILE'
 

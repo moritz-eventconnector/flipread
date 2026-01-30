@@ -43,20 +43,42 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   }, [project.pages_json?.total_pages])
 
   useEffect(() => {
-    if (!stPageFlipLoaded || !containerRef.current || !project.pages_json || !project.pages_json.pages) return
+    if (!stPageFlipLoaded || !containerRef.current || !project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {
+      console.log('FlipbookViewer: Waiting for data...', {
+        stPageFlipLoaded,
+        containerRef: !!containerRef.current,
+        pages_json: !!project.pages_json,
+        pages: project.pages_json?.pages?.length || 0
+      })
+      return
+    }
 
     // Initialize StPageFlip
     const stPageFlip = (window as any).StPageFlip
 
-    if (!stPageFlip) return
+    if (!stPageFlip) {
+      console.error('FlipbookViewer: StPageFlip not loaded')
+      return
+    }
 
     // Calculate dimensions based on first page
     const firstPage = project.pages_json.pages[0]
-    if (!firstPage) return
+    if (!firstPage) {
+      console.error('FlipbookViewer: No first page found')
+      return
+    }
     
-    const aspectRatio = firstPage.width / firstPage.height
+    const pageWidth = firstPage.width || 800
+    const pageHeight = firstPage.height || 600
+    const aspectRatio = pageWidth / pageHeight
     const baseWidth = 800
     const baseHeight = Math.round(baseWidth / aspectRatio)
+    
+    console.log('FlipbookViewer: Initializing with', {
+      pages: project.pages_json.pages.length,
+      firstPage: { width: pageWidth, height: pageHeight, aspectRatio },
+      flipbookSize: { width: baseWidth, height: baseHeight }
+    })
 
     const flipbook = new stPageFlip(containerRef.current, {
       width: baseWidth,
@@ -70,17 +92,27 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     // Load pages - StPageFlip expects array of objects with src, width, height
     const pages = project.pages_json.pages.map((page, index) => {
-      const pageData = project.pages.find(p => p.page_number === page.page_number)
+      const pageData = project.pages?.find(p => p.page_number === page.page_number)
       // Use absolute URL from API or construct from file path
-      const imageUrl = pageData?.image_url || `${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || ''}/media/projects/${project.slug}/pages/${page.file}`
+      let imageUrl = pageData?.image_url
       
-      return {
-        src: imageUrl,
-        width: page.width,
-        height: page.height,
+      // Fallback: construct URL from file path if image_url is not available
+      if (!imageUrl) {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || ''
+        imageUrl = `${apiBase}/media/projects/${project.slug}/pages/${page.file}`
       }
+      
+      const pageObj = {
+        src: imageUrl,
+        width: page.width || 800,
+        height: page.height || 600,
+      }
+      
+      console.log(`FlipbookViewer: Page ${index + 1}`, pageObj)
+      return pageObj
     })
 
+    console.log('FlipbookViewer: Loading pages into StPageFlip', pages.length)
     flipbook.loadPages(pages)
 
     // Update URL when page changes
