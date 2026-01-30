@@ -452,46 +452,63 @@ docker compose up -d nginx
 echo "Warte auf Nginx..."
 sleep 5
 
-# Run certbot (may fail if domain not pointing to server)
-# Use timeout command if available, otherwise run without timeout
+# Run certbot in background with timeout to prevent hanging
 echo "Versuche SSL-Zertifikat zu erstellen..."
 echo "Hinweis: Dies kann einige Minuten dauern..."
+echo "Wenn die Domain nicht auf diesen Server zeigt, wird dies fehlschlagen (das ist OK)."
+echo ""
 
-if command -v timeout &> /dev/null; then
-    # Use timeout if available (Linux)
-    if timeout 120 docker compose run --rm certbot certonly --webroot \
+# Run certbot in background and monitor it
+(
+    docker compose run --rm certbot certonly --webroot \
       --webroot-path=/var/www/certbot \
       --email "$EMAIL" \
       --agree-tos \
       --no-eff-email \
       --non-interactive \
       -d "$DOMAIN" \
-      -d "www.$DOMAIN" > /tmp/certbot_output.log 2>&1; then
-        echo "✅ SSL-Zertifikat erfolgreich erstellt"
-    else
-        CERTBOT_FAILED=true
+      -d "www.$DOMAIN" > /tmp/certbot_output.log 2>&1
+    echo $? > /tmp/certbot_exit_code.txt
+) &
+CERTBOT_PID=$!
+
+# Wait max 90 seconds for certbot
+CERTBOT_WAIT=0
+CERTBOT_MAX_WAIT=90
+while [ $CERTBOT_WAIT -lt $CERTBOT_MAX_WAIT ]; do
+    if ! kill -0 $CERTBOT_PID 2>/dev/null; then
+        # Process finished
+        break
     fi
+    sleep 2
+    CERTBOT_WAIT=$((CERTBOT_WAIT + 2))
+    if [ $((CERTBOT_WAIT % 10)) -eq 0 ]; then
+        echo "Warte auf Certbot... ($CERTBOT_WAIT/$CERTBOT_MAX_WAIT Sekunden)"
+    fi
+done
+
+# Kill certbot if still running
+if kill -0 $CERTBOT_PID 2>/dev/null; then
+    echo ""
+    echo "⚠️  Certbot läuft zu lange, breche ab..."
+    kill $CERTBOT_PID 2>/dev/null || true
+    sleep 2
+    kill -9 $CERTBOT_PID 2>/dev/null || true
+    CERTBOT_EXIT=1
 else
-    # Without timeout (should still work, but may hang)
-    if docker compose run --rm certbot certonly --webroot \
-      --webroot-path=/var/www/certbot \
-      --email "$EMAIL" \
-      --agree-tos \
-      --no-eff-email \
-      --non-interactive \
-      -d "$DOMAIN" \
-      -d "www.$DOMAIN" > /tmp/certbot_output.log 2>&1; then
-        echo "✅ SSL-Zertifikat erfolgreich erstellt"
-    else
-        CERTBOT_FAILED=true
-    fi
+    # Wait for process to fully exit
+    wait $CERTBOT_PID 2>/dev/null || true
+    CERTBOT_EXIT=$(cat /tmp/certbot_exit_code.txt 2>/dev/null || echo "1")
 fi
 
-if [ "${CERTBOT_FAILED:-false}" = "true" ]; then
+# Check result
+if [ "$CERTBOT_EXIT" = "0" ]; then
+    echo "✅ SSL-Zertifikat erfolgreich erstellt"
+else
     echo ""
     echo "⚠️  SSL-Zertifikat konnte nicht erstellt werden."
     echo "Letzte Ausgabe:"
-    tail -20 /tmp/certbot_output.log 2>/dev/null || true
+    tail -15 /tmp/certbot_output.log 2>/dev/null | sed 's/^/  /' || echo "  (keine Ausgabe verfügbar)"
     echo ""
     echo "Mögliche Gründe:"
     echo "  - Domain zeigt nicht auf diesen Server"
