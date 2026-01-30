@@ -596,22 +596,45 @@ else
     else
         echo "Erstelle neue SSL-Zertifikate für $DOMAIN und www.$DOMAIN..."
         
-        # Delete any existing certificates for this domain first (silently)
-        docker compose run --rm --entrypoint "/bin/sh" certbot -c "certbot delete --cert-name $DOMAIN --non-interactive" 2>/dev/null || true
+        # Delete any existing certificates for this domain first (ignore errors if none exist)
+        echo "Prüfe auf vorhandene Zertifikate..."
+        docker compose run --rm --entrypoint "" certbot certbot delete --cert-name "$DOMAIN" --non-interactive 2>&1 | grep -v "No certificate found" || true
         
         # Use certonly to create new certificates
         # Override entrypoint because the certbot container has "certbot renew" as entrypoint
+        echo ""
         echo "Führe Certbot aus (dies kann 1-2 Minuten dauern)..."
-        CERTBOT_OUTPUT=$(docker compose run --rm --entrypoint "/bin/sh" certbot -c "certbot certonly --webroot --webroot-path=/var/www/certbot --email $EMAIL --agree-tos --no-eff-email --non-interactive -d $DOMAIN -d www.$DOMAIN --verbose" 2>&1)
+        echo "Warte auf Let's Encrypt..."
+        echo ""
         
-        echo "$CERTBOT_OUTPUT" | tee /tmp/certbot_output.log
+        # Execute certbot directly - override entrypoint completely
+        if docker compose run --rm --entrypoint "" certbot certbot certonly \
+          --webroot \
+          --webroot-path=/var/www/certbot \
+          --email "$EMAIL" \
+          --agree-tos \
+          --no-eff-email \
+          --non-interactive \
+          -d "$DOMAIN" \
+          -d "www.$DOMAIN" \
+          --verbose 2>&1 | tee /tmp/certbot_output.log; then
+            CERTBOT_CMD_EXIT=0
+        else
+            CERTBOT_CMD_EXIT=$?
+        fi
         
-        # Check if certificates were created
-        sleep 2
+        # Check if certificates were created (regardless of exit code, check file)
+        sleep 3
         if docker compose exec -T nginx test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
             CERTBOT_EXIT=0
+            echo ""
+            echo "✅ Zertifikate erfolgreich erstellt!"
         else
             CERTBOT_EXIT=1
+            echo ""
+            echo "⚠️  Zertifikate nicht gefunden nach Certbot-Aufruf"
+            echo "Letzte Ausgabe:"
+            tail -30 /tmp/certbot_output.log 2>/dev/null | sed 's/^/  /' || echo "  (keine Ausgabe verfügbar)"
         fi
     fi
 fi
