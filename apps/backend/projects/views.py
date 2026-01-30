@@ -127,7 +127,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def download(self, request, slug=None):
-        """Download flipbook as ZIP (requires payment) - Standalone version for any webserver"""
+        """
+        Download flipbook as ZIP (requires payment) - Standalone version for any webserver
+        
+        The ZIP contains:
+        - index.html: Fully self-contained HTML with embedded JavaScript (no external dependencies)
+        - lib/page-flip.browser.js: The page-flip library (if available)
+        - pages/: All page images
+        - pages.json: Page metadata (optional, data is embedded in HTML)
+        
+        The standalone HTML is completely offline-capable and requires no server or API calls.
+        """
         project = self.get_object()
         
         logger.info(f"ZIP download request for project {project.slug} by user {request.user.email}")
@@ -175,7 +185,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
                             logger.error(f"Error adding page {page.page_number} to ZIP: {str(e)}", exc_info=True)
                             continue
             
-                # Add pages.json
+                # Add pages.json (optional - data is also embedded in HTML)
+                # This is included for compatibility, but the HTML doesn't require it
                 if project.pages_json:
                     import json
                     zipf.writestr('pages.json', json.dumps(project.pages_json, indent=2))
@@ -251,7 +262,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
                         logger.warning(f"Failed to download page-flip library via HTTP: {e}")
                 
                 if not lib_found:
-                    logger.warning(f"Page-flip library not found in any of the expected paths or via HTTP - ZIP will not include library. The standalone viewer will need to load the library from a CDN or external source.")
+                    logger.error(f"CRITICAL: Page-flip library not found in any of the expected paths or via HTTP - ZIP will not include library. The standalone viewer will NOT work offline!")
+                    # This is a critical error - the ZIP won't work offline without the library
+                    # We should fail the request or at least warn the user
+                    return Response(
+                        {'error': 'Fehler: Flipbook-Bibliothek konnte nicht in die ZIP-Datei eingefügt werden. Bitte kontaktieren Sie den Support.'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
                 
                 # Create standalone index.html with embedded viewer
                 index_html = self._create_standalone_html(project)
@@ -366,13 +383,29 @@ class ProjectViewSet(viewsets.ModelViewSet):
     <div id="flipbook-container"></div>
     <div id="page-info" class="page-info">Lädt...</div>
     
-    <script src="./lib/page-flip.browser.js"></script>
+    <!-- 
+        Standalone Flipbook Viewer - Fully Offline Capable
+        ===================================================
+        This HTML file is completely self-contained and requires NO internet connection.
+        
+        Features:
+        - All page data is embedded directly in JavaScript (no API calls)
+        - Page-flip library is loaded from ./lib/page-flip.browser.js (included in ZIP)
+        - All page images are in ./pages/ directory (included in ZIP)
+        - No external dependencies - works 100% offline
+        
+        To use:
+        1. Extract the ZIP file to any directory
+        2. Open index.html in any web browser
+        3. No server or internet connection required!
+    -->
     <script>
         (function() {{
             'use strict';
             
+            // Embedded pages data - no API calls needed, completely offline
             const pages = {pages_js};
-            const totalPages = {pages_data.get('total_pages', len(pages_list))};
+            const totalPages = {len(pages_list)};
             let currentPage = 1;
             let flipbook = null;
             
@@ -382,17 +415,41 @@ class ProjectViewSet(viewsets.ModelViewSet):
             if (currentPage < 1) currentPage = 1;
             if (currentPage > totalPages) currentPage = totalPages;
             
+            // Load page-flip library from local lib directory (offline-only, no CDN fallback)
+            // The library MUST be included in the ZIP for offline functionality
+            function loadPageFlipLibrary(callback) {{
+                const script = document.createElement('script');
+                script.src = './lib/page-flip.browser.js';
+                script.onload = function() {{
+                    // Library loaded successfully
+                    if (typeof StPageFlip !== 'undefined') {{
+                        callback();
+                    }} else {{
+                        // Library file exists but doesn't export StPageFlip correctly
+                        document.getElementById('flipbook-container').innerHTML = 
+                            '<div class="error">Fehler: Flipbook-Bibliothek konnte nicht initialisiert werden. Bitte stellen Sie sicher, dass lib/page-flip.browser.js korrekt in der ZIP enthalten ist.</div>';
+                    }}
+                }};
+                script.onerror = function() {{
+                    // Local library not found - this should not happen if ZIP was created correctly
+                    document.getElementById('flipbook-container').innerHTML = 
+                        '<div class="error">Fehler: Flipbook-Bibliothek (lib/page-flip.browser.js) wurde nicht gefunden. Die ZIP-Datei ist möglicherweise unvollständig. Bitte laden Sie die ZIP erneut herunter.</div>';
+                }};
+                document.head.appendChild(script);
+            }}
+            
             // Initialize flipbook
             function initFlipbook() {{
                 const container = document.getElementById('flipbook-container');
                 
                 if (!container || pages.length === 0) {{
-                    container.innerHTML = '<div class="error">Fehler beim Laden des Flipbooks</div>';
+                    container.innerHTML = '<div class="error">Fehler beim Laden des Flipbooks: Keine Seiten gefunden</div>';
                     return;
                 }}
                 
-                // Wait for page-flip library to load
-                if (typeof St === 'undefined' || typeof St.PageFlip === 'undefined') {{
+                // Check if StPageFlip is available (from page-flip library)
+                if (typeof StPageFlip === 'undefined') {{
+                    // Library not loaded yet, wait a bit and retry
                     setTimeout(initFlipbook, 100);
                     return;
                 }}
@@ -404,8 +461,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 const width = maxWidth;
                 const height = Math.round(width / aspectRatio);
                 
-                // Create flipbook instance
-                flipbook = new St.PageFlip(container, {{
+                // Create flipbook instance using StPageFlip (from page-flip library)
+                flipbook = new StPageFlip(container, {{
                     width: width,
                     height: height,
                     showCover: true,
@@ -413,10 +470,19 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     flippingTime: 1000,
                     usePortrait: aspectRatio < 1,
                     startPage: currentPage - 1,
+                    size: 'stretch',
+                    minWidth: 400,
+                    maxWidth: 1200,
+                    minHeight: 300,
+                    maxHeight: 900,
+                    drawShadow: true,
+                    autoSize: true,
+                    useMouseEvents: true,
+                    swipeDistance: 30,
                 }});
                 
-                // Load pages
-                flipbook.loadFromImages(pages.map(p => p.src));
+                // Load pages using loadPages method (correct API for page-flip library)
+                flipbook.loadPages(pages.map(p => p.src));
                 
                 // Update page info
                 function updatePageInfo(page) {{
@@ -445,10 +511,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     
                     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {{
                         e.preventDefault();
-                        flipbook.flipPrev();
+                        if (flipbook && typeof flipbook.flipPrev === 'function') {{
+                            flipbook.flipPrev();
+                        }}
                     }} else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {{
                         e.preventDefault();
-                        flipbook.flipNext();
+                        if (flipbook && typeof flipbook.flipNext === 'function') {{
+                            flipbook.flipNext();
+                        }}
                     }}
                 }});
                 
@@ -458,18 +528,23 @@ class ProjectViewSet(viewsets.ModelViewSet):
                     const page = parseInt(urlParams.get('page') || '1', 10);
                     if (page !== currentPage && page >= 1 && page <= totalPages) {{
                         currentPage = page;
-                        flipbook.flip(currentPage - 1);
+                        if (flipbook && typeof flipbook.flip === 'function') {{
+                            flipbook.flip(currentPage - 1);
+                        }}
                         updatePageInfo(currentPage);
                     }}
                 }});
             }}
             
-            // Initialize on load
-            if (document.readyState === 'loading') {{
-                document.addEventListener('DOMContentLoaded', initFlipbook);
-            }} else {{
-                initFlipbook();
-            }}
+            // Load page-flip library and initialize
+            loadPageFlipLibrary(function() {{
+                // Library loaded, initialize flipbook
+                if (document.readyState === 'loading') {{
+                    document.addEventListener('DOMContentLoaded', initFlipbook);
+                }} else {{
+                    initFlipbook();
+                }}
+            }});
         }})();
     </script>
 </body>

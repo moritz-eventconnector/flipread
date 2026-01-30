@@ -157,9 +157,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const pageWidth = firstPage?.width || 800
   const pageHeight = firstPage?.height || 600
   const aspectRatio = pageWidth / pageHeight
-  // Apply zoom to flipbook dimensions to keep pages connected
-  const baseWidth = Math.round(800 * zoom)
-  const baseHeight = Math.round((800 * zoom) / aspectRatio)
+  // Base dimensions for flipbook (without zoom - zoom is applied to images only)
+  const baseWidth = 800
+  const baseHeight = Math.round(baseWidth / aspectRatio)
 
   const totalPages = project.pages_json?.total_pages || 0
 
@@ -224,22 +224,6 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     return () => clearTimeout(timer)
   }, [currentPage, imageUrls.length])
 
-  // Update flipbook size when zoom changes
-  useEffect(() => {
-    if (!flipBookRef.current) return
-    
-    try {
-      const pageFlip = flipBookRef.current.getPageFlip?.()
-      if (pageFlip && typeof pageFlip.updateSize === 'function') {
-        // Update flipbook size based on zoom
-        const newWidth = Math.round(800 * zoom)
-        const newHeight = Math.round((800 * zoom) / aspectRatio)
-        pageFlip.updateSize(newWidth, newHeight)
-      }
-    } catch (error) {
-      console.warn('FlipbookViewer: Could not update size', error)
-    }
-  }, [zoom, aspectRatio])
 
   const handleFlip = (e: any) => {
     const newPage = e.data
@@ -666,10 +650,10 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             width={baseWidth}
             height={baseHeight}
             size="stretch"
-            minWidth={Math.round(400 * zoom)}
-            maxWidth={Math.round(1200 * zoom)}
-            minHeight={Math.round(300 * zoom)}
-            maxHeight={Math.round(900 * zoom)}
+            minWidth={400}
+            maxWidth={1200}
+            minHeight={300}
+            maxHeight={900}
             maxShadowOpacity={0.5}
             showCover={true}
             flippingTime={1000}
@@ -681,7 +665,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             startPage={currentPage}
             drawShadow={true}
             startZIndex={0}
-            autoSize={false}
+            autoSize={true}
             clickEventForward={true}
             useMouseEvents={!magnifierActive}
             swipeDistance={30}

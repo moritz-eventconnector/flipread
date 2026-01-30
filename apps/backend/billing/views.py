@@ -19,10 +19,18 @@ from .models import StripeCustomer, Payment, Subscription, WebhookEvent
 logger = logging.getLogger(__name__)
 
 # CRITICAL: Initialize Stripe module immediately on import
-# This ensures that stripe.checkout and other submodules are available
-# The Stripe module loads its internal structure when api_key is first set
-# We need to set it early, even if it's a placeholder, to ensure the module structure is loaded
-# However, we'll only set a real key if it's valid
+# Import checkout module explicitly to ensure it's loaded
+try:
+    from stripe import checkout
+    from stripe.checkout import Session as CheckoutSession
+    from stripe.billing_portal import Session as BillingPortalSession
+    STRIPE_MODULES_AVAILABLE = True
+except (ImportError, AttributeError) as e:
+    logger.warning(f"Stripe modules not available on import: {e}")
+    STRIPE_MODULES_AVAILABLE = False
+    checkout = None
+    CheckoutSession = None
+    BillingPortalSession = None
 
 # Initialize Stripe - ALWAYS set the key if available
 # The api_key MUST be set before any Stripe API calls
@@ -47,19 +55,20 @@ def ensure_stripe_api_key():
         logger.warning(f"STRIPE_SECRET_KEY does not start with 'sk_' - likely invalid")
         return False
     
-    # CRITICAL: Set the API key BEFORE accessing any Stripe modules
-    # The Stripe module loads its internal modules (like checkout) only when api_key is set
+    # CRITICAL: Set the API key
     stripe.api_key = settings.STRIPE_SECRET_KEY
     logger.info("Stripe API key set/updated")
     
-    # Verify that Stripe modules are now available
-    # This forces the module to load its internal structure
+    # Verify that we can import Stripe modules
+    # We use direct imports in the views, so we just verify the import works
     try:
-        # Try to access checkout module to ensure it's loaded
-        _ = stripe.checkout
-        _ = stripe.checkout.Session
+        from stripe.checkout import Session as CheckoutSession
+        # Verify it's callable
+        if not callable(CheckoutSession.create):
+            logger.error("CheckoutSession.create is not callable")
+            return False
         logger.debug("Stripe checkout module verified")
-    except AttributeError as e:
+    except (AttributeError, ImportError) as e:
         logger.error(f"Stripe checkout module not available after setting api_key: {e}")
         return False
     
@@ -216,14 +225,6 @@ def checkout_download(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    # Verify that stripe.checkout.Session is available
-    if not hasattr(stripe, 'checkout') or not hasattr(stripe.checkout, 'Session'):
-        logger.error("stripe.checkout.Session is not available - Stripe module not properly initialized")
-        return Response(
-            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-    
     if not settings.STRIPE_DOWNLOAD_PRICE_ID:
         logger.error("STRIPE_DOWNLOAD_PRICE_ID not configured")
         return Response(
@@ -241,8 +242,10 @@ def checkout_download(request):
         )
     
     # Create checkout session
+    # Use direct import to avoid AttributeError
     try:
-        checkout_session = stripe.checkout.Session.create(
+        from stripe.checkout import Session as CheckoutSession
+        checkout_session = CheckoutSession.create(
             customer=stripe_customer.stripe_customer_id,
             payment_method_types=['card'],
             line_items=[{
@@ -386,17 +389,10 @@ def checkout_hosting(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    # Verify that stripe.checkout.Session is available
-    # This ensures the Stripe module has loaded its internal structure
-    if not hasattr(stripe, 'checkout') or not hasattr(stripe.checkout, 'Session'):
-        logger.error("stripe.checkout.Session is not available - Stripe module not properly initialized")
-        return Response(
-            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-    
+    # Create checkout session using direct import to avoid AttributeError
     try:
-        checkout_session = stripe.checkout.Session.create(
+        from stripe.checkout import Session as CheckoutSession
+        checkout_session = CheckoutSession.create(
             customer=stripe_customer.stripe_customer_id,
             payment_method_types=['card'],
             line_items=[{
@@ -410,6 +406,12 @@ def checkout_hosting(request):
                 'user_id': request.user.id,
                 'payment_type': 'hosting'
             }
+        )
+    except (ImportError, AttributeError) as e:
+        logger.error(f"Cannot import or use stripe.checkout.Session: {e}", exc_info=True)
+        return Response(
+            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     except stripe.error.StripeError as e:
         logger.error(f"Stripe API error creating checkout session for hosting: {e}", exc_info=True)
@@ -464,14 +466,6 @@ def billing_portal(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    # Verify that stripe.billing_portal.Session is available
-    if not hasattr(stripe, 'billing_portal') or not hasattr(stripe.billing_portal, 'Session'):
-        logger.error("stripe.billing_portal.Session is not available - Stripe module not properly initialized")
-        return Response(
-            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-    
     try:
         stripe_customer = get_or_create_stripe_customer(request.user)
     except Exception as e:
@@ -482,7 +476,9 @@ def billing_portal(request):
         )
     
     try:
-        portal_session = stripe.billing_portal.Session.create(
+        # Use direct import to avoid AttributeError
+        from stripe.billing_portal import Session as BillingPortalSession
+        portal_session = BillingPortalSession.create(
             customer=stripe_customer.stripe_customer_id,
             return_url=f"{settings.SITE_URL}/app/dashboard",
         )
