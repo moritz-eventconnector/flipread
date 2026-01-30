@@ -31,6 +31,7 @@ const Page = React.forwardRef<HTMLDivElement, { imageUrl: string; pageNumber: nu
     return (
       <div ref={ref} className="page" style={{ width: '100%', height: '100%' }}>
         <div className="page-content" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imageUrl}
             alt={`Seite ${pageNumber}`}
@@ -175,6 +176,11 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
           mobileScrollSupport={true}
           onFlip={handleFlip}
           className="flipbook-container"
+          style={{}}
+          startPage={currentPage}
+          drawShadow={true}
+          startZIndex={0}
+          autoSize={true}
         >
           {imageUrls.map((imageUrl, index) => (
             <Page
