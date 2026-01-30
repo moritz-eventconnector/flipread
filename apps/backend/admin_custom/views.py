@@ -140,3 +140,4 @@ def toggle_project_publish(request, project_id):
             status=status.HTTP_404_NOT_FOUND
         )
 
+

@@ -32,3 +32,4 @@ class WebhookEventAdmin(admin.ModelAdmin):
     search_fields = ('stripe_event_id', 'event_type')
     readonly_fields = ('created_at',)
 
+

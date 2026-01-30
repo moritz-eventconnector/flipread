@@ -38,3 +38,4 @@ class ProjectPageAdmin(admin.ModelAdmin):
     list_filter = ('project',)
     search_fields = ('project__title',)
 
+

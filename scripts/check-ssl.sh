@@ -93,3 +93,4 @@ echo "----------------------------------------"
 docker compose exec -T nginx cat /etc/nginx/conf.d/flipread.conf 2>/dev/null | head -40 || echo "Kann Konfiguration nicht lesen"
 echo ""
 
+

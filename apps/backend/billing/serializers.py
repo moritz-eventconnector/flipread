@@ -23,3 +23,4 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'status', 'current_period_start', 'current_period_end', 'created_at')
 
+

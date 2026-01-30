@@ -12,3 +12,4 @@ urlpatterns = [
     path('projects/<int:project_id>/toggle-publish/', toggle_project_publish, name='toggle_project_publish'),
 ]
 
+

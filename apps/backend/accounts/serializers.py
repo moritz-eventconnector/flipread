@@ -63,3 +63,4 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             raise serializers.ValidationError({"new_password": "Passwords don't match"})
         return attrs
 
+

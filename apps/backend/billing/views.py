@@ -106,7 +106,36 @@ def get_or_create_stripe_customer(user):
     
     # Check if customer already exists
     try:
-        return user.stripe_customer
+        stripe_customer = user.stripe_customer
+        # Check if this is a mock customer (cus_dev_*) - if so, replace it with a real one
+        if stripe_customer.stripe_customer_id.startswith('cus_dev_'):
+            logger.warning(f"Found mock customer {stripe_customer.stripe_customer_id} for user {user.email} - replacing with real Stripe customer")
+            # Delete the mock customer entry
+            old_customer_id = stripe_customer.stripe_customer_id
+            stripe_customer.delete()
+            # Create a real Stripe customer
+            try:
+                logger.info(f"Creating real Stripe customer for user {user.email} (replacing mock {old_customer_id})")
+                customer = stripe.Customer.create(
+                    email=user.email,
+                    metadata={'user_id': user.id}
+                )
+                logger.info(f"Stripe customer created: {customer.id}")
+                return StripeCustomer.objects.create(
+                    user=user,
+                    stripe_customer_id=customer.id
+                )
+            except AttributeError as e:
+                logger.error(f"Stripe module error (api_key may be None): {e}", exc_info=True)
+                raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
+            except stripe.error.StripeError as e:
+                logger.error(f"Stripe API error creating customer: {e}", exc_info=True)
+                raise
+            except Exception as e:
+                logger.error(f"Unexpected error creating Stripe customer: {e}", exc_info=True)
+                raise
+        # Valid Stripe customer - return it
+        return stripe_customer
     except StripeCustomer.DoesNotExist:
         try:
             logger.info(f"Creating Stripe customer for user {user.email}")

@@ -503,8 +503,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   return (
     <div className="w-full h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 relative overflow-hidden">
       {/* Top Toolbar */}
-      <div className="absolute top-0 left-0 right-0 z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="flex items-center justify-between px-4 py-3">
+      <div className="relative z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 shadow-sm h-16 flex items-center flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 w-full">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate max-w-xs">
               {project.title}
@@ -605,15 +605,13 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             // Calculate background size: image should be magnified by magnifierZoom factor
             // backgroundSize in %: 100% = original size, 50% = 2x zoom (image appears 2x larger)
             // For a 2x zoom, we want the image to be 50% of its original size in the lens
-            // This makes it appear 2x larger
+            // This makes it appear 2x larger (only 50% of the zoomed image fits in the lens)
+            // Formula: backgroundSize = 100 / magnifierZoom
             backgroundSize: `${100 / magnifierZoom}%`,
             // Background position: Center the magnified area on the mouse position
-            // The position is already in percentage (0-100%), so we can use it directly
-            // For proper centering, we need to adjust by half the lens size relative to the zoomed image
-            // When backgroundSize is 50% (2x zoom), the image is 2x larger, so we need to offset
-            // Formula: position = mousePosition% - (50% / magnifierZoom)
-            // For 2x zoom: position = mouseX% - 25%
-            backgroundPosition: `${Math.max(0, Math.min(100, magnifierPosition.x - (50 / magnifierZoom)))}% ${Math.max(0, Math.min(100, magnifierPosition.y - (50 / magnifierZoom)))}%`,
+            // The position is already in percentage (0-100%), and we use it directly
+            // When backgroundSize is 50% (2x zoom), background-position directly maps to the image position
+            backgroundPosition: `${magnifierPosition.x}% ${magnifierPosition.y}%`,
             display: 'block',
             left: `${magnifierPosition.mouseX - 100}px`,
             top: `${magnifierPosition.mouseY - 100}px`,
@@ -627,7 +625,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
       {/* Main Content Area */}
       <div 
-        className="flex-1 flex items-center justify-center pt-16 pb-24 px-4 overflow-hidden"
+        className="flex-1 flex items-center justify-center pb-24 px-4 overflow-hidden"
         onMouseMove={(e) => {
           if (magnifierActive && imageUrls[currentPage]) {
             // Find the actual page image element within the flipbook

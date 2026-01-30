@@ -155,3 +155,4 @@ echo "  5. ✅ /.well-known/acme-challenge/ muss erreichbar sein"
 echo ""
 echo "Wenn alle Punkte erfüllt sind, sollte Certbot funktionieren."
 
+

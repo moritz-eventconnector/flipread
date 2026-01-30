@@ -6,3 +6,4 @@ Disallow: /admin/
 
 Sitemap: https://flipread.de/sitemap.xml
 
+
