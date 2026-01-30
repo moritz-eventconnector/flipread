@@ -77,6 +77,46 @@ else
     read -p "Stripe Hosting Price ID: " STRIPE_HOSTING_PRICE_ID
 fi
 
+# Ask about Email configuration
+echo ""
+echo "Email-Konfiguration (für Verifizierung und 2FA):"
+if [ "$DEV_MODE" = true ]; then
+    echo "⚠️  DEV MODE: Email ist optional"
+    read -p "SMTP Host [optional]: " EMAIL_HOST
+    read -p "SMTP Port [587]: " EMAIL_PORT
+    EMAIL_PORT=${EMAIL_PORT:-587}
+    read -p "SMTP Benutzername [optional]: " EMAIL_HOST_USER
+    read -sp "SMTP Passwort [optional]: " EMAIL_HOST_PASSWORD
+    echo ""
+    read -p "Email-Verifizierung aktivieren? (j/n) [n]: " ENABLE_EMAIL_VERIFICATION_INPUT
+    ENABLE_EMAIL_VERIFICATION_INPUT=${ENABLE_EMAIL_VERIFICATION_INPUT:-n}
+    read -p "2FA per Email aktivieren? (j/n) [n]: " ENABLE_2FA_EMAIL_INPUT
+    ENABLE_2FA_EMAIL_INPUT=${ENABLE_2FA_EMAIL_INPUT:-n}
+else
+    read -p "SMTP Host (z.B. smtp.gmail.com): " EMAIL_HOST
+    read -p "SMTP Port [587]: " EMAIL_PORT
+    EMAIL_PORT=${EMAIL_PORT:-587}
+    read -p "SMTP Benutzername: " EMAIL_HOST_USER
+    read -sp "SMTP Passwort: " EMAIL_HOST_PASSWORD
+    echo ""
+    read -p "Email-Verifizierung aktivieren? (j/n) [j]: " ENABLE_EMAIL_VERIFICATION_INPUT
+    ENABLE_EMAIL_VERIFICATION_INPUT=${ENABLE_EMAIL_VERIFICATION_INPUT:-j}
+    read -p "2FA per Email aktivieren? (j/n) [j]: " ENABLE_2FA_EMAIL_INPUT
+    ENABLE_2FA_EMAIL_INPUT=${ENABLE_2FA_EMAIL_INPUT:-j}
+fi
+
+if [[ "$ENABLE_EMAIL_VERIFICATION_INPUT" =~ ^[jJ] ]]; then
+    ENABLE_EMAIL_VERIFICATION="True"
+else
+    ENABLE_EMAIL_VERIFICATION="False"
+fi
+
+if [[ "$ENABLE_2FA_EMAIL_INPUT" =~ ^[jJ] ]]; then
+    ENABLE_2FA_EMAIL="True"
+else
+    ENABLE_2FA_EMAIL="False"
+fi
+
 # Ask about S3 Storage
 echo ""
 echo "S3 Storage (optional - empfohlen für Produktion):"
@@ -92,22 +132,36 @@ if [[ "$USE_S3_INPUT" =~ ^[jJ] ]]; then
     read -p "Wahl [1]: " S3_SERVICE_TYPE
     S3_SERVICE_TYPE=${S3_SERVICE_TYPE:-1}
     
-    if [ "$S3_SERVICE_TYPE" = "2" ]; then
-        read -p "S3 Endpoint URL (z.B. https://s3.safes3.com): " AWS_S3_ENDPOINT_URL
-        if [ -z "$AWS_S3_ENDPOINT_URL" ]; then
-            echo "⚠️  Endpoint URL ist erforderlich für S3-kompatible Services!"
-            exit 1
-        fi
-    else
-        AWS_S3_ENDPOINT_URL=""
-    fi
-    
     read -p "S3 Access Key ID: " AWS_ACCESS_KEY_ID
     read -sp "S3 Secret Access Key: " AWS_SECRET_ACCESS_KEY
     echo ""
-    read -p "S3 Storage Bucket Name: " AWS_STORAGE_BUCKET_NAME
-    read -p "S3 Region Name [eu-central-1]: " AWS_S3_REGION_NAME
-    AWS_S3_REGION_NAME=${AWS_S3_REGION_NAME:-eu-central-1}
+    
+    if [ "$S3_SERVICE_TYPE" = "2" ]; then
+        echo ""
+        echo "SafeS3/anderer S3-kompatibler Service:"
+        read -p "S3 Basis-URL (z.B. https://de-zlg1.safes3.com/flipread/): " AWS_S3_BASE_URL
+        if [ -z "$AWS_S3_BASE_URL" ]; then
+            echo "⚠️  Basis-URL ist erforderlich!"
+            exit 1
+        fi
+        # Extract endpoint and bucket from base URL
+        # https://de-zlg1.safes3.com/flipread/ -> endpoint: https://de-zlg1.safes3.com, bucket: flipread
+        # Remove trailing slash
+        AWS_S3_BASE_URL=$(echo "$AWS_S3_BASE_URL" | sed 's|/$||')
+        # Extract hostname for endpoint
+        AWS_S3_ENDPOINT_URL=$(echo "$AWS_S3_BASE_URL" | sed -E 's|(https?://[^/]+)/.*|\1|')
+        # Extract bucket name (first path segment after hostname)
+        AWS_STORAGE_BUCKET_NAME=$(echo "$AWS_S3_BASE_URL" | sed -E 's|https?://[^/]+/([^/]+).*|\1|')
+        AWS_S3_REGION_NAME="eu-central-1"  # Not used for SafeS3 but required
+        echo "  → Endpoint: $AWS_S3_ENDPOINT_URL"
+        echo "  → Bucket: $AWS_STORAGE_BUCKET_NAME"
+    else
+        AWS_S3_ENDPOINT_URL=""
+        read -p "S3 Storage Bucket Name: " AWS_STORAGE_BUCKET_NAME
+        read -p "S3 Region Name [eu-central-1]: " AWS_S3_REGION_NAME
+        AWS_S3_REGION_NAME=${AWS_S3_REGION_NAME:-eu-central-1}
+    fi
+    
     read -p "S3 Custom Domain (optional, z.B. CDN): " AWS_S3_CUSTOM_DOMAIN
 else
     USE_S3="False"
@@ -182,12 +236,14 @@ STRIPE_DOWNLOAD_PRICE_ID=$STRIPE_DOWNLOAD_PRICE_ID
 STRIPE_HOSTING_PRICE_ID=$STRIPE_HOSTING_PRICE_ID
 
 # Email (DEV - optional)
-EMAIL_HOST=
-EMAIL_PORT=587
-EMAIL_HOST_USER=
-EMAIL_HOST_PASSWORD=
+EMAIL_HOST=$EMAIL_HOST
+EMAIL_PORT=$EMAIL_PORT
+EMAIL_HOST_USER=$EMAIL_HOST_USER
+EMAIL_HOST_PASSWORD=$EMAIL_HOST_PASSWORD
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=noreply@$DOMAIN
+ENABLE_EMAIL_VERIFICATION=$ENABLE_EMAIL_VERIFICATION
+ENABLE_2FA_EMAIL=$ENABLE_2FA_EMAIL
 
 # S3 Storage
 USE_S3=$USE_S3
@@ -199,7 +255,8 @@ AWS_S3_REGION_NAME=$AWS_S3_REGION_NAME
 AWS_S3_CUSTOM_DOMAIN=$AWS_S3_CUSTOM_DOMAIN
 
 # Features
-ENABLE_EMAIL_VERIFICATION=True
+ENABLE_EMAIL_VERIFICATION=$ENABLE_EMAIL_VERIFICATION
+ENABLE_2FA_EMAIL=$ENABLE_2FA_EMAIL
 
 # Frontend
 NEXT_PUBLIC_API_URL=https://$DOMAIN/api
@@ -244,7 +301,8 @@ AWS_S3_REGION_NAME=$AWS_S3_REGION_NAME
 AWS_S3_CUSTOM_DOMAIN=$AWS_S3_CUSTOM_DOMAIN
 
 # Features
-ENABLE_EMAIL_VERIFICATION=True
+ENABLE_EMAIL_VERIFICATION=$ENABLE_EMAIL_VERIFICATION
+ENABLE_2FA_EMAIL=$ENABLE_2FA_EMAIL
 
 # Frontend
 NEXT_PUBLIC_API_URL=https://$DOMAIN/api

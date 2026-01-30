@@ -11,8 +11,8 @@ from accounts.models import User
 
 
 def project_upload_path(instance, filename):
-    """Generate upload path for project PDFs"""
-    return f'projects/{instance.user.id}/{secrets.token_urlsafe(8)}/{filename}'
+    """Generate upload path for project PDFs: customer-{user_id}-projekt-{token}/{filename}"""
+    return f'customer-{instance.user.id}-projekt-{secrets.token_urlsafe(8)}/{filename}'
 
 
 class Project(models.Model):
@@ -119,11 +119,16 @@ class Project(models.Model):
         )
 
 
+def project_page_upload_path(instance, filename):
+    """Generate upload path for project pages: customer-{user_id}-projekt-{project_id}/pages/{filename}"""
+    return f'customer-{instance.project.user.id}-projekt-{instance.project.id}/pages/{filename}'
+
+
 class ProjectPage(models.Model):
     """Individual page of a flipbook"""
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='pages')
     page_number = models.IntegerField()
-    image_file = models.ImageField(upload_to='projects/pages/')
+    image_file = models.ImageField(upload_to=project_page_upload_path)
     width = models.IntegerField(default=0)
     height = models.IntegerField(default=0)
     

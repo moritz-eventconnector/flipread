@@ -6,8 +6,11 @@ from storages.backends.s3boto3 import S3Boto3Storage
 
 
 class MediaStorage(S3Boto3Storage):
-    """Storage for media files (PDFs, page images)"""
-    location = 'media'
+    """Storage for media files (PDFs, page images)
+    
+    Files are stored with structure: customer-{user_id}-projekt-{project_id}/...
+    """
+    location = ''  # No prefix, files already have full path from upload_to
     default_acl = 'private'  # Media files should be private
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
@@ -20,8 +23,11 @@ class MediaStorage(S3Boto3Storage):
 
 
 class PublishedStorage(S3Boto3Storage):
-    """Storage for published flipbooks (public)"""
-    location = 'published'
+    """Storage for published flipbooks (public)
+    
+    Files are stored with structure: customer-{user_id}-projekt-{published_slug}/...
+    """
+    location = ''  # No prefix, files already have full path
     default_acl = 'public-read'  # Published files should be public
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN

@@ -129,14 +129,14 @@ else:
 if USE_S3:
     DEFAULT_FILE_STORAGE = 'projects.storage.MediaStorage'
     if AWS_S3_CUSTOM_DOMAIN:
-        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
     elif AWS_S3_ENDPOINT_URL:
         # S3-compatible service (e.g. SafeS3)
         endpoint_host = AWS_S3_ENDPOINT_URL.replace('https://', '').replace('http://', '').split('/')[0]
-        MEDIA_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/media/'
+        MEDIA_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/'
     else:
         # Standard AWS S3
-        MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/media/'
+        MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/'
     MEDIA_ROOT = None
 else:
     MEDIA_URL = '/media/'
@@ -146,14 +146,14 @@ else:
 if USE_S3:
     PUBLISHED_STORAGE = 'projects.storage.PublishedStorage'
     if AWS_S3_CUSTOM_DOMAIN:
-        PUBLISHED_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/published/'
+        PUBLISHED_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
     elif AWS_S3_ENDPOINT_URL:
         # S3-compatible service (e.g. SafeS3)
         endpoint_host = AWS_S3_ENDPOINT_URL.replace('https://', '').replace('http://', '').split('/')[0]
-        PUBLISHED_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/published/'
+        PUBLISHED_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/'
     else:
         # Standard AWS S3
-        PUBLISHED_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/published/'
+        PUBLISHED_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/'
     PUBLISHED_ROOT = None
 else:
     PUBLISHED_ROOT = BASE_DIR / 'published'

@@ -122,9 +122,12 @@ def publish_flipbook_task(project_id):
             project.save()  # This will generate published_slug
         
         if settings.USE_S3:
-            # Publish to S3
+            # Publish to S3 with structure: customer-{user_id}-projekt-{published_slug}/...
             from .storage import PublishedStorage
             storage = PublishedStorage()
+            
+            # Base path for published files
+            base_path = f"customer-{project.user.id}-projekt-{project.published_slug}"
             
             # Upload pages
             for page in project.pages.all().order_by('page_number'):
@@ -138,12 +141,12 @@ def publish_flipbook_task(project_id):
                             image_content = f.read()
                     
                     # Upload to S3
-                    s3_path = f"{project.published_slug}/pages/page-{page.page_number:03d}.jpg"
+                    s3_path = f"{base_path}/pages/page-{page.page_number:03d}.jpg"
                     storage.save(s3_path, ContentFile(image_content))
             
             # Upload pages.json
             pages_json_content = json.dumps(project.pages_json, indent=2).encode('utf-8')
-            storage.save(f"{project.published_slug}/pages.json", ContentFile(pages_json_content))
+            storage.save(f"{base_path}/pages.json", ContentFile(pages_json_content))
             
             # Create and upload index.html
             index_html = f"""<!DOCTYPE html>
@@ -161,7 +164,7 @@ def publish_flipbook_task(project_id):
     <script src="app.js"></script>
 </body>
 </html>"""
-            storage.save(f"{project.published_slug}/index.html", ContentFile(index_html.encode('utf-8')))
+            storage.save(f"{base_path}/index.html", ContentFile(index_html.encode('utf-8')))
             
             # Upload app.js and app.css from viewer source if exists
             viewer_source = os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'viewer')
@@ -169,7 +172,7 @@ def publish_flipbook_task(project_id):
                 src = os.path.join(viewer_source, file)
                 if os.path.exists(src):
                     with open(src, 'rb') as f:
-                        storage.save(f"{project.published_slug}/{file}", ContentFile(f.read()))
+                        storage.save(f"{base_path}/{file}", ContentFile(f.read()))
             
             return f"Published project {project.id} to S3: {project.published_slug}"
         else:
