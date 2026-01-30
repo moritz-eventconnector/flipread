@@ -270,6 +270,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, totalPages])
 
   if (!project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {

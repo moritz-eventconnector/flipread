@@ -20,8 +20,8 @@ export default function AGBPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">1. Geltungsbereich</h2>
             <p className="text-gray-700 dark:text-gray-300">
-              Diese Allgemeinen Geschäftsbedingungen (nachfolgend "AGB") regeln die Nutzung der von Moritz Hauff IT 
-              (nachfolgend "Anbieter" oder "wir") betriebenen Plattform FlipRead (nachfolgend "Plattform" oder "Service").
+              Diese Allgemeinen Geschäftsbedingungen (nachfolgend &quot;AGB&quot;) regeln die Nutzung der von Moritz Hauff IT 
+              (nachfolgend &quot;Anbieter&quot; oder &quot;wir&quot;) betriebenen Plattform FlipRead (nachfolgend &quot;Plattform&quot; oder &quot;Service&quot;).
             </p>
             <p className="text-gray-700 dark:text-gray-300 mt-4">
               Durch die Registrierung und Nutzung der Plattform akzeptieren Sie diese AGB in ihrer jeweils gültigen Fassung. 
