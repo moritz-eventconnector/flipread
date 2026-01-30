@@ -53,7 +53,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        serializer = self.get_serializer(project)
+        # Ensure serializer has request context for absolute URLs
+        serializer = self.get_serializer(project, context={'request': request})
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'])

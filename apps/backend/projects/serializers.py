@@ -23,18 +23,19 @@ class ProjectSerializer(serializers.ModelSerializer):
     can_publish = serializers.ReadOnlyField()
     preview_url = serializers.SerializerMethodField()
     public_url = serializers.SerializerMethodField()
+    pages_json = serializers.JSONField(read_only=True)
     
     class Meta:
         model = Project
         fields = (
             'id', 'title', 'slug', 'description', 'status', 'error_message',
-            'total_pages', 'pdf_url', 'pages', 'can_download', 'can_publish',
+            'total_pages', 'pdf_url', 'pages', 'pages_json', 'can_download', 'can_publish',
             'download_enabled', 'is_published', 'published_slug',
             'preview_url', 'public_url',
             'created_at', 'updated_at', 'processing_started_at', 'processing_completed_at'
         )
         read_only_fields = (
-            'id', 'slug', 'status', 'error_message', 'total_pages',
+            'id', 'slug', 'status', 'error_message', 'total_pages', 'pages_json',
             'can_download', 'can_publish', 'created_at', 'updated_at',
             'processing_started_at', 'processing_completed_at'
         )

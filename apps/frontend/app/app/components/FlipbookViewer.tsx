@@ -34,37 +34,48 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     // Get page from URL
     const urlParams = new URLSearchParams(window.location.search)
     const pageParam = urlParams.get('page')
-    if (pageParam) {
+    if (pageParam && project.pages_json && project.pages_json.total_pages) {
       const pageNum = parseInt(pageParam, 10)
       if (pageNum >= 1 && pageNum <= project.pages_json.total_pages) {
         setCurrentPage(pageNum)
       }
     }
-  }, [project.pages_json.total_pages])
+  }, [project.pages_json?.total_pages])
 
   useEffect(() => {
-    if (!stPageFlipLoaded || !containerRef.current) return
+    if (!stPageFlipLoaded || !containerRef.current || !project.pages_json || !project.pages_json.pages) return
 
     // Initialize StPageFlip
     const stPageFlip = (window as any).StPageFlip
 
     if (!stPageFlip) return
 
+    // Calculate dimensions based on first page
+    const firstPage = project.pages_json.pages[0]
+    if (!firstPage) return
+    
+    const aspectRatio = firstPage.width / firstPage.height
+    const baseWidth = 800
+    const baseHeight = Math.round(baseWidth / aspectRatio)
+
     const flipbook = new stPageFlip(containerRef.current, {
-      width: 800,
-      height: 600,
+      width: baseWidth,
+      height: baseHeight,
       showCover: true,
       maxShadowOpacity: 0.5,
       flippingTime: 1000,
-      usePortrait: true,
+      usePortrait: aspectRatio < 1,
       startPage: currentPage - 1,
     })
 
-    // Load pages
+    // Load pages - StPageFlip expects array of objects with src, width, height
     const pages = project.pages_json.pages.map((page, index) => {
       const pageData = project.pages.find(p => p.page_number === page.page_number)
+      // Use absolute URL from API or construct from file path
+      const imageUrl = pageData?.image_url || `${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || ''}/media/projects/${project.slug}/pages/${page.file}`
+      
       return {
-        src: pageData?.image_url || `/pages/${page.file}`,
+        src: imageUrl,
         width: page.width,
         height: page.height,
       }
@@ -94,11 +105,11 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      if (flipbook) {
+      if (flipbook && typeof flipbook.destroy === 'function') {
         flipbook.destroy()
       }
     }
-  }, [stPageFlipLoaded, project, currentPage])
+  }, [stPageFlipLoaded, project.pages_json, project.pages, currentPage])
 
   return (
     <>
@@ -106,15 +117,17 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         src="https://cdn.jsdelivr.net/npm/st-pageflip@latest/dist/st-pageflip.min.js"
         onLoad={() => setStPageFlipLoaded(true)}
       />
-      <div className="w-full h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+      <div className="w-full h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 relative">
         <div
           ref={containerRef}
           className="flipbook-container"
-          style={{ width: '100%', height: '100%', maxWidth: '1200px' }}
+          style={{ width: '100%', height: '100%', maxWidth: '1200px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
         />
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-50 text-white px-4 py-2 rounded">
-          Seite {currentPage} von {project.pages_json.total_pages}
-        </div>
+        {project.pages_json && project.pages_json.total_pages && (
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-50 text-white px-4 py-2 rounded z-10">
+            Seite {currentPage} von {project.pages_json.total_pages}
+          </div>
+        )}
       </div>
     </>
   )

@@ -56,6 +56,23 @@ export default function PreviewPage() {
     )
   }
 
+  // Validate that project has required data
+  if (!project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 dark:text-red-400 mb-4">Fehler: Projekt-Daten sind unvollständig</p>
+          <Link
+            href={`/app/projects/${project.slug}`}
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+          >
+            Zurück zum Projekt
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen">
       <div className="absolute top-4 left-4 z-10">
