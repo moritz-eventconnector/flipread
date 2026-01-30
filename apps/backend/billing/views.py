@@ -88,34 +88,21 @@ def get_or_create_stripe_customer(user):
     # Check if Stripe is properly configured
     # Must check settings directly, not stripe.api_key, because it might be None even if key is set
     if not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
-        # DEV MODE: Return mock customer
-        logger.info(f"DEV MODE: Creating mock Stripe customer for user {user.id}")
-        customer, _ = StripeCustomer.objects.get_or_create(
-            user=user,
-            defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
-        )
-        return customer
+        # Stripe not configured - raise error instead of creating mock customer
+        logger.error(f"STRIPE_SECRET_KEY not configured or invalid (length: {len(settings.STRIPE_SECRET_KEY) if settings.STRIPE_SECRET_KEY else 0})")
+        raise ValueError("Stripe is not properly configured. Please set STRIPE_SECRET_KEY in your environment.")
     
     # Ensure stripe.api_key is set BEFORE any Stripe API calls
     # This is critical - the stripe module breaks if api_key is None when APIs are called
     if not ensure_stripe_api_key():
-        # DEV MODE: Return mock customer
-        logger.info(f"DEV MODE: Creating mock Stripe customer for user {user.id}")
-        customer, _ = StripeCustomer.objects.get_or_create(
-            user=user,
-            defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
-        )
-        return customer
+        # Stripe key validation failed - raise error instead of creating mock customer
+        logger.error(f"STRIPE_SECRET_KEY validation failed for user {user.id}")
+        raise ValueError("Stripe API key validation failed. Please check your STRIPE_SECRET_KEY configuration.")
     
     # Final verification that stripe.api_key is set (should never be None at this point)
     if not stripe.api_key:
         logger.error("stripe.api_key is None after ensure_stripe_api_key() - this should not happen")
-        # Return mock customer instead of crashing
-        customer, _ = StripeCustomer.objects.get_or_create(
-            user=user,
-            defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
-        )
-        return customer
+        raise ValueError("Stripe API key is not set. Please check your configuration.")
     
     # Check if customer already exists
     try:
@@ -135,12 +122,7 @@ def get_or_create_stripe_customer(user):
         except AttributeError as e:
             # This happens when stripe.api_key is None and Stripe tries to access internal modules
             logger.error(f"Stripe module error (api_key may be None): {e}", exc_info=True)
-            # Return mock customer instead of crashing
-            customer, _ = StripeCustomer.objects.get_or_create(
-                user=user,
-                defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
-            )
-            return customer
+            raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
         except stripe.error.StripeError as e:
             logger.error(f"Stripe API error creating customer: {e}", exc_info=True)
             raise
@@ -158,16 +140,21 @@ def checkout_download(request):
         # DEV MODE handling is done in the function body
         pass
     
+    # Accept both project_id and project_slug
     project_id = request.data.get('project_id')
+    project_slug = request.data.get('project_slug')
     
-    if not project_id:
+    if not project_id and not project_slug:
         return Response(
-            {'error': 'project_id is required'}, 
+            {'error': 'project_id or project_slug is required'}, 
             status=status.HTTP_400_BAD_REQUEST
         )
     
     try:
-        project = Project.objects.get(id=project_id, user=request.user)
+        if project_id:
+            project = Project.objects.get(id=project_id, user=request.user)
+        else:
+            project = Project.objects.get(slug=project_slug, user=request.user)
     except Project.DoesNotExist:
         return Response(
             {'error': 'Project not found'},
@@ -343,8 +330,28 @@ def checkout_hosting(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
+    # Check if user already has active subscription
+    active_sub = Subscription.objects.filter(
+        user=request.user,
+        status=Subscription.Status.ACTIVE
+    ).first()
+    
+    if active_sub:
+        return Response(
+            {'error': 'You already have an active hosting subscription'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Get or create Stripe customer
     try:
         stripe_customer = get_or_create_stripe_customer(request.user)
+    except ValueError as e:
+        # Stripe configuration error
+        logger.error(f"Stripe configuration error: {e}", exc_info=True)
+        return Response(
+            {'error': f'Payment system configuration error: {str(e)}. Please contact support.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
     except AttributeError as e:
         # This happens when stripe.api_key is None and Stripe tries to access internal modules
         logger.error(f"Stripe module error (api_key may be None): {e}", exc_info=True)
@@ -357,18 +364,6 @@ def checkout_hosting(request):
         return Response(
             {'error': f'Failed to create payment session: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-    
-    # Check if user already has active subscription
-    active_sub = Subscription.objects.filter(
-        user=request.user,
-        status=Subscription.Status.ACTIVE
-    ).first()
-    
-    if active_sub:
-        return Response(
-            {'error': 'You already have an active hosting subscription'},
-            status=status.HTTP_400_BAD_REQUEST
         )
     
     # Create checkout session

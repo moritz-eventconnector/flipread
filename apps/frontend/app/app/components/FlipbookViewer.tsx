@@ -71,7 +71,15 @@ const Page = React.forwardRef<HTMLDivElement, {
         <div 
           ref={containerRef}
           className="page-content" 
-          style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            overflow: 'visible',
+            padding: '10px'
+          }}
           onMouseMove={handleMouseMove}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -80,12 +88,14 @@ const Page = React.forwardRef<HTMLDivElement, {
             src={imageUrl}
             alt={`Seite ${pageNumber}`}
             style={{ 
-              maxWidth: `${100 * zoom}%`, 
-              maxHeight: `${100 * zoom}%`, 
+              width: '100%',
+              height: '100%',
               objectFit: 'contain',
               transition: magnifierActive ? 'none' : 'transform 0.3s ease',
               transform: `scale(${zoom})`,
-              cursor: magnifierActive ? 'none' : 'default'
+              cursor: magnifierActive ? 'none' : 'default',
+              maxWidth: 'none',
+              maxHeight: 'none'
             }}
             loading="lazy"
           />
@@ -157,9 +167,35 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const pageWidth = firstPage?.width || 800
   const pageHeight = firstPage?.height || 600
   const aspectRatio = pageWidth / pageHeight
-  // Base dimensions for flipbook (without zoom - zoom is applied to images only)
-  const baseWidth = 800
-  const baseHeight = Math.round(baseWidth / aspectRatio)
+  
+  // Calculate base dimensions dynamically based on viewport
+  // Ensure the flipbook fits within the viewport while maintaining aspect ratio
+  const calculateDimensions = () => {
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth - 80 : 1200
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight - 200 : 800
+    
+    // Calculate maximum dimensions that fit in viewport
+    const maxWidth = Math.min(1200, viewportWidth)
+    const maxHeight = Math.min(900, viewportHeight)
+    
+    // Calculate dimensions maintaining aspect ratio
+    let baseWidth = maxWidth
+    let baseHeight = Math.round(baseWidth / aspectRatio)
+    
+    // If height exceeds viewport, scale down
+    if (baseHeight > maxHeight) {
+      baseHeight = maxHeight
+      baseWidth = Math.round(baseHeight * aspectRatio)
+    }
+    
+    // Ensure minimum size
+    baseWidth = Math.max(400, baseWidth)
+    baseHeight = Math.max(300, baseHeight)
+    
+    return { baseWidth, baseHeight }
+  }
+  
+  const { baseWidth, baseHeight } = calculateDimensions()
 
   const totalPages = project.pages_json?.total_pages || 0
 
@@ -665,7 +701,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             startPage={currentPage}
             drawShadow={true}
             startZIndex={0}
-            autoSize={true}
+            autoSize={false}
             clickEventForward={true}
             useMouseEvents={!magnifierActive}
             swipeDistance={30}
