@@ -12,7 +12,10 @@ from django.utils import timezone
 from django.conf import settings
 from django.core.mail import send_mail
 import secrets
+import logging
 from datetime import timedelta
+
+logger = logging.getLogger(__name__)
 
 from .serializers import (
     UserSerializer, RegisterSerializer,
@@ -54,37 +57,14 @@ class RegisterView(generics.CreateAPIView):
                 expires_at=expires_at
             )
             
-            verification_url = f"{settings.SITE_URL}/app/verify-email?token={token}"
-            
-            # Render HTML email template
-            html_message = render_to_string('emails/email_verification.html', {
-                'verification_url': verification_url,
-                'current_year': timezone.now().year,
-            })
-            
-            plain_message = f"""Hallo,
-
-vielen Dank für Ihre Registrierung bei FlipRead!
-
-Bitte klicken Sie auf den folgenden Link, um Ihre Email-Adresse zu verifizieren:
-{verification_url}
-
-Dieser Link ist 24 Stunden gültig.
-
-Falls Sie sich nicht registriert haben, können Sie diese Email ignorieren.
-
-Mit freundlichen Grüßen,
-Ihr FlipRead Team
-"""
-            
-            send_mail(
-                subject='Email-Verifizierung - FlipRead',
-                message=plain_message,
-                html_message=html_message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
+            # Send email asynchronously using Celery to avoid blocking registration
+            try:
+                from .tasks import send_verification_email
+                send_verification_email.delay(user.id, token)
+                logger.info(f"Verification email task queued for user {user.email}")
+            except Exception as e:
+                # If Celery is not available, log warning but don't fail registration
+                logger.warning(f"Failed to queue verification email task for {user.email}: {e}. Email will not be sent.")
         else:
             user.is_email_verified = True
             user.save()
