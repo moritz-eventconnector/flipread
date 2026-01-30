@@ -7,6 +7,7 @@ from django.utils import timezone
 import os
 import zipfile
 import shutil
+import secrets
 
 from .models import Project, ProjectPage
 from .serializers import ProjectSerializer, ProjectCreateSerializer
@@ -90,11 +91,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 import json
                 zipf.writestr('pages.json', json.dumps(project.pages_json, indent=2))
         
-        return FileResponse(
+        # Use context manager for file response
+        response = FileResponse(
             open(zip_path, 'rb'),
             as_attachment=True,
             filename=f"{project.slug}.zip"
         )
+        response['Content-Type'] = 'application/zip'
+        return response
     
     @action(detail=True, methods=['post'])
     def publish(self, request, slug=None):
@@ -118,6 +122,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 {'error': 'Active hosting subscription required'},
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
+        
+        # Generate published slug if not exists
+        if not project.published_slug:
+            project.published_slug = f"{project.slug}-{secrets.token_urlsafe(8)}"
         
         # Generate published version
         from .tasks import publish_flipbook_task

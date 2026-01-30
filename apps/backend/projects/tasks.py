@@ -122,11 +122,32 @@ def publish_flipbook_task(project_id):
         with open(pages_json_path, 'w') as f:
             json.dump(project.pages_json, f, indent=2)
         
-        # Copy viewer files
-        viewer_source = os.path.join(settings.BASE_DIR.parent, 'apps', 'frontend', 'public', 'viewer')
+        # Copy viewer files (from backend static or create inline)
+        # Create index.html
+        index_html = f"""<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{project.title} - Flipbook</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <div id="flipbook-container"></div>
+    <div id="page-info" class="page-info"></div>
+    <script src="https://cdn.jsdelivr.net/npm/st-pageflip@latest/dist/st-pageflip.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>"""
+        
+        with open(os.path.join(published_dir, 'index.html'), 'w', encoding='utf-8') as f:
+            f.write(index_html)
+        
+        # Copy app.js and app.css from viewer source if exists
+        viewer_source = os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'viewer')
         if os.path.exists(viewer_source):
             import shutil
-            for file in ['index.html', 'app.js', 'app.css']:
+            for file in ['app.js', 'app.css']:
                 src = os.path.join(viewer_source, file)
                 dst = os.path.join(published_dir, file)
                 if os.path.exists(src):

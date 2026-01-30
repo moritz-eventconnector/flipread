@@ -71,15 +71,15 @@ class Project(models.Model):
     def save(self, *args, **kwargs):
         if not self.slug:
             base_slug = self.title.lower().replace(' ', '-')
+            # Remove special characters
+            base_slug = ''.join(c for c in base_slug if c.isalnum() or c in '-_')
             self.slug = base_slug
             counter = 1
-            while Project.objects.filter(slug=self.slug).exists():
+            while Project.objects.filter(slug=self.slug).exclude(id=self.id).exists():
                 self.slug = f"{base_slug}-{counter}"
                 counter += 1
         
-        if not self.published_slug and self.is_published:
-            self.published_slug = f"{self.slug}-{secrets.token_urlsafe(8)}"
-        
+        # published_slug wird jetzt in views.py beim Publish gesetzt
         super().save(*args, **kwargs)
     
     @property

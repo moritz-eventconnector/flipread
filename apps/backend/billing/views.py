@@ -18,11 +18,24 @@ from .models import StripeCustomer, Payment, Subscription, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
+# Initialize Stripe only if keys are configured
+if settings.STRIPE_SECRET_KEY and not settings.STRIPE_SECRET_KEY.startswith('sk_test_dev'):
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+else:
+    logger.warning("Stripe not configured - running in DEV mode")
+    stripe.api_key = None
 
 
 def get_or_create_stripe_customer(user):
     """Get or create Stripe customer for user"""
+    if not stripe.api_key or stripe.api_key.startswith('sk_test_dev'):
+        # DEV MODE: Return mock customer
+        customer, _ = StripeCustomer.objects.get_or_create(
+            user=user,
+            defaults={'stripe_customer_id': f'cus_dev_{user.id}'}
+        )
+        return customer
+    
     try:
         return user.stripe_customer
     except StripeCustomer.DoesNotExist:
@@ -61,6 +74,29 @@ def checkout_download(request):
             {'error': 'Download already enabled'},
             status=status.HTTP_400_BAD_REQUEST
         )
+    
+    # DEV MODE: Skip payment and enable download directly
+    if not stripe.api_key or stripe.api_key.startswith('sk_test_dev'):
+        project.download_enabled = True
+        project.download_paid_at = timezone.now()
+        project.save()
+        
+        Payment.objects.create(
+            user=request.user,
+            project=project,
+            payment_type=Payment.PaymentType.DOWNLOAD,
+            stripe_payment_intent_id='dev_payment',
+            stripe_checkout_session_id='dev_session',
+            amount=9.90,
+            currency='EUR',
+            status=Payment.Status.COMPLETED,
+            completed_at=timezone.now()
+        )
+        
+        return Response({
+            'message': 'Download enabled (DEV MODE - no payment required)',
+            'checkout_url': f"{settings.SITE_URL}/app/projects/{project.slug}?payment=success"
+        })
     
     # Get or create Stripe customer
     stripe_customer = get_or_create_stripe_customer(request.user)
@@ -105,6 +141,30 @@ def checkout_download(request):
 @permission_classes([permissions.IsAuthenticated])
 def checkout_hosting(request):
     """Create checkout session for hosting subscription"""
+    # DEV MODE: Enable hosting directly
+    if not stripe.api_key or stripe.api_key.startswith('sk_test_dev'):
+        from datetime import timedelta
+        user = request.user
+        user.hosting_enabled = True
+        user.hosting_enabled_until = timezone.now() + timedelta(days=365)
+        user.save()
+        
+        Subscription.objects.update_or_create(
+            user=user,
+            defaults={
+                'stripe_subscription_id': f'sub_dev_{user.id}',
+                'stripe_price_id': 'price_dev',
+                'status': Subscription.Status.ACTIVE,
+                'current_period_start': timezone.now(),
+                'current_period_end': timezone.now() + timedelta(days=365),
+            }
+        )
+        
+        return Response({
+            'message': 'Hosting enabled (DEV MODE - no payment required)',
+            'checkout_url': f"{settings.SITE_URL}/app/dashboard?subscription=success"
+        })
+    
     # Get or create Stripe customer
     stripe_customer = get_or_create_stripe_customer(request.user)
     
@@ -146,6 +206,13 @@ def checkout_hosting(request):
 @permission_classes([permissions.IsAuthenticated])
 def billing_portal(request):
     """Create billing portal session"""
+    # DEV MODE: Return dashboard URL
+    if not stripe.api_key or stripe.api_key.startswith('sk_test_dev'):
+        return Response({
+            'portal_url': f"{settings.SITE_URL}/app/dashboard",
+            'message': 'DEV MODE: Billing portal not available'
+        })
+    
     stripe_customer = get_or_create_stripe_customer(request.user)
     
     portal_session = stripe.billing_portal.Session.create(

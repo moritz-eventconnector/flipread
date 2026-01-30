@@ -62,6 +62,22 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
         model = Project
         fields = ('title', 'description', 'pdf_file')
     
+    def validate_pdf_file(self, value):
+        """Validate PDF file"""
+        if value.size > 100 * 1024 * 1024:  # 100MB limit
+            raise serializers.ValidationError("PDF file too large. Maximum size is 100MB.")
+        if not value.name.lower().endswith('.pdf'):
+            raise serializers.ValidationError("File must be a PDF.")
+        return value
+    
+    def validate_title(self, value):
+        """Validate title"""
+        if len(value) < 3:
+            raise serializers.ValidationError("Title must be at least 3 characters long.")
+        if len(value) > 255:
+            raise serializers.ValidationError("Title must be less than 255 characters.")
+        return value
+    
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         validated_data['status'] = Project.Status.UPLOADING

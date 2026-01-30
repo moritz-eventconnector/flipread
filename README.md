@@ -22,16 +22,28 @@ FlipRead ist eine produktionsreife SaaS-Anwendung zur Erstellung und Veröffentl
 
 ## 🛠️ Installation
 
-### 1. Repository klonen
+### Schnellstart (DEV MODE - für Tests)
+
+Für schnelle Tests ohne Email und Stripe:
 
 ```bash
 git clone <repository-url> flipread
 cd flipread
+chmod +x scripts/install.sh
+sudo ./scripts/install.sh --dev
 ```
 
-### 2. Installationsskript ausführen
+Im DEV MODE:
+- ✅ Email und Stripe sind **optional**
+- ✅ SSL wird **übersprungen** (http:// statt https://)
+- ✅ **Test-User wird automatisch erstellt**: `test@flipread.de` / `test123456`
+- ✅ Download/Publish funktioniert **ohne Zahlung**
+
+### Produktions-Installation
 
 ```bash
+git clone <repository-url> flipread
+cd flipread
 chmod +x scripts/install.sh
 sudo ./scripts/install.sh
 ```
@@ -43,7 +55,7 @@ Das Skript fragt nach:
 - Stripe API Keys
 - Stripe Price IDs (Download & Hosting)
 
-### 3. Manuelle Installation (Alternative)
+### Manuelle Installation (Alternative)
 
 #### 2.1 Umgebungsvariablen setzen
 
@@ -145,7 +157,7 @@ flipread/
 ├── infra/
 │   └── nginx/            # Nginx Konfiguration
 ├── scripts/
-│   ├── install.sh        # Installation
+│   ├── install.sh        # Installation (--dev für Dev Mode)
 │   └── update.sh         # Update
 ├── docker-compose.yml
 └── README.md
@@ -185,12 +197,16 @@ Die aktuelle Implementierung nutzt Django's lokale Authentifizierung. Die Archit
 2. Stripe Checkout durchführen
 3. Nach Zahlung: ZIP-Download verfügbar
 
+**DEV MODE**: Download wird automatisch freigeschaltet ohne Zahlung!
+
 ### Hosting (Abo)
 
 1. Im Dashboard auf "Publish" klicken
 2. Stripe Checkout für Abo durchführen
 3. Nach Zahlung: Öffentliche URL verfügbar
 4. Ohne aktives Abo: Publish wird deaktiviert
+
+**DEV MODE**: Hosting wird automatisch aktiviert ohne Zahlung!
 
 ## 🔧 Admin Bereich
 
@@ -236,3 +252,8 @@ Proprietär - Alle Rechte vorbehalten
 
 Bei Problemen bitte ein Issue im Repository erstellen.
 
+## 📚 Weitere Dokumentation
+
+- **QUICKSTART.md** - Schnellstart-Anleitung
+- **TROUBLESHOOTING.md** - Detaillierte Fehlerbehebung
+- **DEPLOYMENT.md** - Deployment-Guide
