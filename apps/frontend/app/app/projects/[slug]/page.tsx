@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import api from '@/lib/api'
+import { getCurrentUser, User as AuthUser } from '@/lib/auth'
 import toast from 'react-hot-toast'
 
 interface Project {
@@ -21,6 +22,7 @@ interface Project {
   public_url: string | null
   created_at: string
 }
+
 
 // Component to edit published URL
 function PublishedUrlEditor({ project, onUpdate }: { project: Project; onUpdate: () => void }) {
@@ -155,7 +157,11 @@ export default function ProjectDetailPage() {
   const params = useParams()
   const router = useRouter()
   const [project, setProject] = useState<Project | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showPublishModal, setShowPublishModal] = useState(false)
+  const [publishSlug, setPublishSlug] = useState('')
+  const [publishing, setPublishing] = useState(false)
 
   useEffect(() => {
     loadProject()
@@ -173,6 +179,68 @@ export default function ProjectDetailPage() {
       router.push('/app/dashboard')
     } finally {
       setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadUser()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const loadUser = async () => {
+    try {
+      const userData = await getCurrentUser()
+      setUser(userData)
+    } catch (error) {
+      console.error('Failed to load user data')
+    }
+  }
+
+  const handlePublishClick = () => {
+    if (user?.has_active_hosting) {
+      // User has hosting, show modal for slug input
+      setShowPublishModal(true)
+      setPublishSlug('')
+    } else {
+      // User doesn't have hosting, redirect to hosting page
+      router.push('/app/billing/hosting')
+    }
+  }
+
+  const handlePublish = async () => {
+    if (!publishSlug.trim()) {
+      toast.error('Bitte geben Sie eine URL ein')
+      return
+    }
+
+    // Validate slug format
+    const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+    if (!slugRegex.test(publishSlug)) {
+      toast.error('URL darf nur Kleinbuchstaben, Zahlen und Bindestriche enthalten')
+      return
+    }
+
+    if (publishSlug.length < 3) {
+      toast.error('URL muss mindestens 3 Zeichen lang sein')
+      return
+    }
+
+    setPublishing(true)
+    try {
+      await api.post(`/projects/${project!.slug}/publish/`, {
+        published_slug: publishSlug.trim()
+      })
+      toast.success('Projekt wird veröffentlicht...')
+      setShowPublishModal(false)
+      setPublishSlug('')
+      // Reload project after a short delay
+      setTimeout(() => {
+        loadProject()
+      }, 1000)
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Fehler beim Veröffentlichen')
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -300,12 +368,12 @@ export default function ProjectDetailPage() {
                     </Link>
                   )
                 ) : (
-                  <Link
-                    href="/app/billing/hosting"
+                  <button
+                    onClick={handlePublishClick}
                     className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors shadow-md"
                   >
                     Hosting benötigt
-                  </Link>
+                  </button>
                 )}
               </div>
 
@@ -317,6 +385,65 @@ export default function ProjectDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Publish Modal */}
+      {showPublishModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">
+              Flipbook veröffentlichen
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Geben Sie eine eindeutige URL für Ihr Flipbook ein:
+            </p>
+            <div className="mb-4">
+              <label htmlFor="publish_slug" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                URL
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 dark:text-gray-400 whitespace-nowrap text-sm">
+                  {process.env.NEXT_PUBLIC_SITE_URL || 'https://flipread.de'}/public/
+                </span>
+                <input
+                  id="publish_slug"
+                  type="text"
+                  value={publishSlug}
+                  onChange={(e) => {
+                    const value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+                    setPublishSlug(value)
+                  }}
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  placeholder="mein-katalog"
+                  disabled={publishing}
+                  autoFocus
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Nur Kleinbuchstaben, Zahlen und Bindestriche erlaubt (mindestens 3 Zeichen)
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handlePublish}
+                disabled={publishing || !publishSlug.trim() || publishSlug.length < 3}
+                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {publishing ? 'Wird veröffentlicht...' : 'Veröffentlichen'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowPublishModal(false)
+                  setPublishSlug('')
+                }}
+                disabled={publishing}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

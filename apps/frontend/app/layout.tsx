@@ -20,12 +20,7 @@ export const metadata: Metadata = {
   publisher: 'FlipRead',
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
       { url: '/favicon.png', type: 'image/png' },
-      { url: '/icon.png', type: 'image/png', sizes: '512x512' },
-    ],
-    apple: [
-      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
     ],
   },
   formatDetection: {

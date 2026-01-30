@@ -9,6 +9,7 @@ import { FlipbookViewer } from '@/app/app/components/FlipbookViewer'
 interface Project {
   slug: string
   title: string
+  can_download?: boolean
   pages: Array<{
     page_number: number
     image_url: string

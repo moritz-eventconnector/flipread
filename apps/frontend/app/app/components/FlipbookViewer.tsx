@@ -2,11 +2,14 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import HTMLFlipBook from 'react-pageflip'
+import api from '@/lib/api'
+import toast from 'react-hot-toast'
 
 interface FlipbookViewerProps {
   project: {
     slug: string
     title: string
+    can_download?: boolean
     pages: Array<{
       page_number: number
       image_url: string
@@ -44,11 +47,19 @@ const Page = React.forwardRef<HTMLDivElement, {
       const containerRect = containerRef.current.getBoundingClientRect()
       const imgRect = imgRef.current.getBoundingClientRect()
       
-      // Calculate relative position within the image
-      const relativeX = ((e.clientX - imgRect.left) / imgRect.width) * 100
-      const relativeY = ((e.clientY - imgRect.top) / imgRect.height) * 100
+      // Calculate mouse position relative to the image
+      const mouseX = e.clientX - imgRect.left
+      const mouseY = e.clientY - imgRect.top
       
-      onMagnifierMove(relativeX, relativeY, e.clientX, e.clientY)
+      // Calculate relative position within the image (0-100%)
+      const relativeX = (mouseX / imgRect.width) * 100
+      const relativeY = (mouseY / imgRect.height) * 100
+      
+      // Clamp to image bounds
+      const clampedX = Math.max(0, Math.min(100, relativeX))
+      const clampedY = Math.max(0, Math.min(100, relativeY))
+      
+      onMagnifierMove(clampedX, clampedY, e.clientX, e.clientY)
     }
 
     return (
@@ -122,6 +133,12 @@ const XIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
+const DownloadIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+  </svg>
+)
+
 export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const flipBookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
@@ -132,6 +149,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const [magnifierActive, setMagnifierActive] = useState(false)
   const [magnifierPosition, setMagnifierPosition] = useState({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
   const [magnifierZoom, setMagnifierZoom] = useState(2)
+  const [downloading, setDownloading] = useState(false)
   const hideNavigationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Calculate dimensions based on first page
@@ -216,6 +234,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   }
 
   const goToPage = (pageIndex: number) => {
+    if (pageIndex < 0 || pageIndex >= totalPages) return
+    
     if (flipBookRef.current) {
       try {
         const pageFlip = flipBookRef.current.getPageFlip?.()
@@ -225,10 +245,21 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
           const url = new URL(window.location.href)
           url.searchParams.set('page', (pageIndex + 1).toString())
           window.history.pushState({}, '', url.toString())
+        } else {
+          // Fallback: directly update state if pageFlip is not available
+          setCurrentPage(pageIndex)
+          const url = new URL(window.location.href)
+          url.searchParams.set('page', (pageIndex + 1).toString())
+          window.history.pushState({}, '', url.toString())
         }
       } catch (error) {
         console.warn('FlipbookViewer: Could not navigate to page', error)
+        // Fallback: directly update state
+        setCurrentPage(pageIndex)
       }
+    } else {
+      // Fallback: directly update state if ref is not available
+      setCurrentPage(pageIndex)
     }
   }
 
@@ -238,6 +269,13 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         const pageFlip = flipBookRef.current.getPageFlip?.()
         if (pageFlip && typeof pageFlip.flipNext === 'function') {
           pageFlip.flipNext()
+          // Update state immediately
+          const newPage = currentPage + 1
+          setCurrentPage(newPage)
+          // Update URL
+          const url = new URL(window.location.href)
+          url.searchParams.set('page', (newPage + 1).toString())
+          window.history.pushState({}, '', url.toString())
         }
       } catch (error) {
         console.warn('FlipbookViewer: Could not flip next', error)
@@ -251,6 +289,13 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         const pageFlip = flipBookRef.current.getPageFlip?.()
         if (pageFlip && typeof pageFlip.flipPrev === 'function') {
           pageFlip.flipPrev()
+          // Update state immediately
+          const newPage = currentPage - 1
+          setCurrentPage(newPage)
+          // Update URL
+          const url = new URL(window.location.href)
+          url.searchParams.set('page', (newPage + 1).toString())
+          window.history.pushState({}, '', url.toString())
         }
       } catch (error) {
         console.warn('FlipbookViewer: Could not flip prev', error)
@@ -268,6 +313,39 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
   const handleZoomReset = () => {
     setZoom(1)
+  }
+
+  const handleDownload = async () => {
+    if (!project.can_download) {
+      // Redirect to download purchase page
+      window.location.href = `/app/projects/${project.slug}/download`
+      return
+    }
+
+    setDownloading(true)
+    try {
+      const response = await api.get(`/projects/${project.slug}/download/`, {
+        responseType: 'blob',
+      })
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${project.slug}.zip`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Download gestartet')
+    } catch (error: any) {
+      if (error.response?.status === 402) {
+        // Payment required - redirect to purchase page
+        window.location.href = `/app/projects/${project.slug}/download`
+      } else {
+        toast.error(error.response?.data?.error || 'Fehler beim Download')
+      }
+    } finally {
+      setDownloading(false)
+    }
   }
 
   // Auto-hide navigation after inactivity
@@ -432,6 +510,20 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
               </svg>
             </button>
 
+            {/* Download Button */}
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              className={`p-2 rounded-lg transition-colors ${
+                project.can_download
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : 'bg-yellow-600 text-white hover:bg-yellow-700'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={project.can_download ? 'PDF herunterladen' : 'Download kaufen'}
+            >
+              <DownloadIcon className="w-5 h-5" />
+            </button>
+
             {/* Thumbnail Toggle */}
             <button
               onClick={() => setShowThumbnails(!showThumbnails)}
@@ -449,7 +541,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       </div>
 
       {/* Magnifier Lens */}
-      {magnifierActive && imageUrls[currentPage] && magnifierPosition.mouseX > 0 && (
+      {magnifierActive && imageUrls[currentPage] && magnifierPosition.mouseX > 0 && magnifierPosition.mouseY > 0 && (
         <div
           className="magnifier-lens fixed pointer-events-none z-[1000]"
           style={{
@@ -459,14 +551,22 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             border: '3px solid white',
             boxShadow: '0 0 20px rgba(0,0,0,0.5), 0 0 40px rgba(0,0,0,0.3)',
             overflow: 'hidden',
-            background: `url(${imageUrls[currentPage]}) no-repeat`,
+            backgroundImage: `url(${imageUrls[currentPage]})`,
+            backgroundRepeat: 'no-repeat',
+            // The background size should be the zoom level * magnifier zoom
+            // This makes the image appear larger in the magnifier
             backgroundSize: `${zoom * magnifierZoom * 100}%`,
+            // Background position: center the magnified area on the mouse position
+            // We need to adjust the position so the zoomed area aligns correctly
+            // The position is calculated as: (mouse position / image size) * 100%
             backgroundPosition: `${magnifierPosition.x}% ${magnifierPosition.y}%`,
             display: 'block',
             left: `${magnifierPosition.mouseX - 100}px`,
             top: `${magnifierPosition.mouseY - 100}px`,
             transition: 'none',
-            cursor: 'none'
+            cursor: 'none',
+            transform: 'translateZ(0)', // Force hardware acceleration
+            willChange: 'transform' // Optimize for animation
           }}
         />
       )}
@@ -476,26 +576,31 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         className="flex-1 flex items-center justify-center pt-16 pb-24 px-4 overflow-hidden"
         onMouseMove={(e) => {
           if (magnifierActive && imageUrls[currentPage]) {
-            // Get the flipbook container
-            const flipbookEl = document.querySelector('.flipbook-container') as HTMLElement
-            if (!flipbookEl) return
+            // Find the actual page image element
+            const pageImages = document.querySelectorAll('.flipbook-container img')
+            const currentPageImg = pageImages[currentPage] as HTMLImageElement
             
-            const rect = flipbookEl.getBoundingClientRect()
-            const x = e.clientX - rect.left
-            const y = e.clientY - rect.top
-            
-            // Check if mouse is over the flipbook
-            if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
-              // Calculate relative position within the flipbook
-              const relativeX = (x / rect.width) * 100
-              const relativeY = (y / rect.height) * 100
+            if (currentPageImg) {
+              const imgRect = currentPageImg.getBoundingClientRect()
+              const mouseX = e.clientX - imgRect.left
+              const mouseY = e.clientY - imgRect.top
               
-              setMagnifierPosition({ 
-                x: relativeX, 
-                y: relativeY, 
-                mouseX: e.clientX, 
-                mouseY: e.clientY 
-              })
+              // Check if mouse is over the image
+              if (mouseX >= 0 && mouseX <= imgRect.width && mouseY >= 0 && mouseY <= imgRect.height) {
+                // Calculate relative position within the image (0-100%)
+                const relativeX = (mouseX / imgRect.width) * 100
+                const relativeY = (mouseY / imgRect.height) * 100
+                
+                setMagnifierPosition({ 
+                  x: relativeX, 
+                  y: relativeY, 
+                  mouseX: e.clientX, 
+                  mouseY: e.clientY 
+                })
+              } else {
+                // Hide magnifier if outside image
+                setMagnifierPosition({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
+              }
             }
           }
         }}
@@ -571,10 +676,32 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             <ChevronLeftIcon className="w-5 h-5" />
           </button>
 
-          {/* Page Info */}
-          <div className="flex items-center gap-2 px-3">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {currentPage + 1} / {totalPages}
+          {/* Page Info with Input */}
+          <div className="flex items-center gap-1 px-3">
+            <span className="text-sm text-gray-600 dark:text-gray-400">Seite</span>
+            <input
+              type="number"
+              value={currentPage + 1}
+              onChange={(e) => {
+                const pageNum = parseInt(e.target.value, 10)
+                if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+                  goToPage(pageNum - 1)
+                }
+              }}
+              onBlur={(e) => {
+                // On blur, if input is empty or invalid, revert to current page
+                const pageNum = parseInt(e.target.value, 10)
+                if (isNaN(pageNum) || pageNum < 1 || pageNum > totalPages) {
+                  e.target.value = (currentPage + 1).toString()
+                }
+              }}
+              min={1}
+              max={totalPages}
+              className="w-12 text-center bg-transparent border-b border-gray-300 dark:border-gray-600 text-lg font-bold text-gray-900 dark:text-white focus:outline-none focus:border-primary-500"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-400">von</span>
+            <span className="text-lg font-bold text-gray-900 dark:text-white">
+              {totalPages}
             </span>
           </div>
 

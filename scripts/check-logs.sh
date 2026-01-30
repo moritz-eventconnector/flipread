@@ -11,23 +11,32 @@ echo "----------------------------------------"
 docker compose logs --tail=50 backend 2>&1
 echo ""
 
-echo "2. Suche nach Login-Fehlern:"
+echo "2. Suche nach Fehlern (ERROR, Exception, Traceback):"
 echo "----------------------------------------"
-docker compose logs backend 2>&1 | grep -i -E "(login|error|exception|traceback|failed)" | tail -20
+docker compose logs backend 2>&1 | grep -i -E "(ERROR|Exception|Traceback|Failed|failed)" | tail -30
 echo ""
 
-echo "3. Suche nach Email-Fehlern:"
+echo "3. Suche nach Login-Fehlern:"
+echo "----------------------------------------"
+docker compose logs backend 2>&1 | grep -i -E "(login|authentication|credentials|password|2fa)" | tail -20
+echo ""
+
+echo "4. Suche nach Email-Fehlern:"
 echo "----------------------------------------"
 docker compose logs backend 2>&1 | grep -i -E "(email|smtp|mail|send_mail)" | tail -20
 echo ""
 
-echo "4. Teste Login-Endpoint direkt:"
+echo "5. Suche nach Download/Projekt-Fehlern:"
 echo "----------------------------------------"
-echo "Versuche Login-Request zu senden..."
-echo "(Dies zeigt nur die HTTP-Response, nicht die vollständigen Logs)"
+docker compose logs backend 2>&1 | grep -i -E "(download|project|zip|publish)" | tail -20
 echo ""
 
-echo "5. Prüfe Email-Konfiguration in .env:"
+echo "6. Suche nach Stripe-Fehlern:"
+echo "----------------------------------------"
+docker compose logs backend 2>&1 | grep -i -E "(stripe|payment|checkout|billing)" | tail -20
+echo ""
+
+echo "7. Prüfe Email-Konfiguration in .env:"
 echo "----------------------------------------"
 if [ -f .env ]; then
     echo "EMAIL_HOST: $(grep -E '^EMAIL_HOST=' .env | cut -d'=' -f2 || echo 'NOT SET')"
@@ -39,7 +48,7 @@ else
 fi
 echo ""
 
-echo "6. Live-Logs (drücken Sie Ctrl+C zum Beenden):"
+echo "8. Live-Logs (drücken Sie Ctrl+C zum Beenden):"
 echo "----------------------------------------"
 echo "Starte Live-Log-Viewer..."
 docker compose logs -f backend

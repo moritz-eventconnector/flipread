@@ -50,15 +50,7 @@ export default function LoginPage() {
               alt="FlipRead Logo"
               width={150}
               height={60}
-              className="h-12 w-auto dark:hidden"
-              priority
-            />
-            <Image
-              src="/logo-dark.png"
-              alt="FlipRead Logo"
-              width={150}
-              height={60}
-              className="h-12 w-auto hidden dark:block"
+              className="h-12 w-auto"
               priority
             />
           </Link>
