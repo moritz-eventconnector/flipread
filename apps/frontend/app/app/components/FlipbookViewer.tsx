@@ -75,6 +75,11 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         imageUrl = `${apiBase}/media/projects/${project.slug}/pages/${page.file}`
       }
       
+      // Ensure HTTPS (fix Mixed Content warnings)
+      if (imageUrl && imageUrl.startsWith('http://')) {
+        imageUrl = imageUrl.replace('http://', 'https://')
+      }
+      
       return imageUrl
     })
 
@@ -95,15 +100,23 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
   // Navigate to initial page when flipbook is ready
   useEffect(() => {
-    if (flipBookRef.current && currentPage > 0) {
-      const pageFlip = flipBookRef.current.getPageFlip()
-      if (pageFlip) {
-        // Small delay to ensure flipbook is fully initialized
-        setTimeout(() => {
-          pageFlip.turnToPage(currentPage)
-        }, 100)
+    if (!flipBookRef.current || imageUrls.length === 0) return
+    
+    // Wait for component to be fully mounted and initialized
+    const timer = setTimeout(() => {
+      if (flipBookRef.current) {
+        try {
+          const pageFlip = flipBookRef.current.getPageFlip?.()
+          if (pageFlip && typeof pageFlip.turnToPage === 'function' && currentPage > 0) {
+            pageFlip.turnToPage(currentPage)
+          }
+        } catch (error) {
+          console.warn('FlipbookViewer: Could not navigate to page', error)
+        }
       }
-    }
+    }, 500) // Increased delay to ensure component is ready
+    
+    return () => clearTimeout(timer)
   }, [currentPage, imageUrls.length])
 
   const handleFlip = (e: any) => {
@@ -121,13 +134,17 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!flipBookRef.current) return
       
-      const pageFlip = flipBookRef.current.getPageFlip()
-      if (!pageFlip) return
+      try {
+        const pageFlip = flipBookRef.current.getPageFlip?.()
+        if (!pageFlip || typeof pageFlip.flipPrev !== 'function') return
 
-      if (e.key === 'ArrowLeft') {
-        pageFlip.flipPrev()
-      } else if (e.key === 'ArrowRight') {
-        pageFlip.flipNext()
+        if (e.key === 'ArrowLeft') {
+          pageFlip.flipPrev()
+        } else if (e.key === 'ArrowRight') {
+          pageFlip.flipNext()
+        }
+      } catch (error) {
+        console.warn('FlipbookViewer: Keyboard navigation error', error)
       }
     }
 

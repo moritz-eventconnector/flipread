@@ -183,6 +183,11 @@ STRIPE_HOSTING_PRICE_ID = env('STRIPE_HOSTING_PRICE_ID', default='')
 # Site URL
 SITE_URL = env('SITE_URL', default='https://flipread.de')
 
+# Security settings for reverse proxy (Nginx)
+# Tell Django to trust the X-Forwarded-Proto header from Nginx
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_TLS = not DEBUG  # Use HTTPS in production
+
 # Celery
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://redis:6379/0')
 CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://redis:6379/0')
