@@ -78,7 +78,31 @@ docker compose up -d
 
 echo ""
 echo "Warte auf Services..."
-sleep 5
+sleep 10
+
+# Check if containers are running
+echo ""
+echo "Prüfe Container-Status..."
+if ! docker compose ps backend | grep -q "Up"; then
+    echo "❌ Backend Container startet nicht!"
+    echo "Backend Logs:"
+    docker compose logs --tail=30 backend
+    echo ""
+fi
+
+if ! docker compose ps frontend | grep -q "Up"; then
+    echo "❌ Frontend Container startet nicht!"
+    echo "Frontend Logs:"
+    docker compose logs --tail=30 frontend
+    echo ""
+fi
+
+if ! docker compose ps nginx | grep -q "Up"; then
+    echo "❌ Nginx Container startet nicht!"
+    echo "Nginx Logs:"
+    docker compose logs --tail=30 nginx
+    echo ""
+fi
 
 echo ""
 echo "Führe Migrationen aus..."
@@ -94,19 +118,77 @@ docker compose restart celery celery-beat
 
 echo ""
 echo "Führe Health Checks aus..."
-sleep 3
+sleep 5
 
-# Health checks
-if curl -f -s http://localhost/health > /dev/null; then
-    echo "✓ Frontend Health Check: OK"
+# Health checks with detailed output
+echo ""
+echo "Prüfe Services..."
+echo ""
+
+# Check if containers are running
+if ! docker compose ps backend | grep -q "Up"; then
+    echo "❌ Backend Container läuft nicht!"
+    echo "Backend Logs:"
+    docker compose logs --tail=20 backend
 else
-    echo "✗ Frontend Health Check: FEHLER"
+    echo "✅ Backend Container läuft"
 fi
 
-if curl -f -s http://localhost/api/health/ > /dev/null; then
-    echo "✓ API Health Check: OK"
+if ! docker compose ps frontend | grep -q "Up"; then
+    echo "❌ Frontend Container läuft nicht!"
+    echo "Frontend Logs:"
+    docker compose logs --tail=20 frontend
 else
-    echo "✗ API Health Check: FEHLER"
+    echo "✅ Frontend Container läuft"
+fi
+
+if ! docker compose ps nginx | grep -q "Up"; then
+    echo "❌ Nginx Container läuft nicht!"
+    echo "Nginx Logs:"
+    docker compose logs --tail=20 nginx
+else
+    echo "✅ Nginx Container läuft"
+fi
+
+echo ""
+echo "Teste interne Verbindungen..."
+
+# Test backend directly
+if docker compose exec -T backend curl -f -s http://localhost:8000/health/ > /dev/null 2>&1; then
+    echo "✅ Backend intern erreichbar"
+else
+    echo "❌ Backend intern nicht erreichbar"
+    echo "Backend Logs:"
+    docker compose logs --tail=10 backend
+fi
+
+# Test frontend directly
+if docker compose exec -T frontend curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
+    echo "✅ Frontend intern erreichbar"
+else
+    echo "❌ Frontend intern nicht erreichbar"
+    echo "Frontend Logs:"
+    docker compose logs --tail=10 frontend
+fi
+
+echo ""
+echo "Teste externe Verbindungen..."
+
+# Health checks
+if curl -f -s http://localhost/health > /dev/null 2>&1; then
+    echo "✅ Frontend Health Check: OK"
+else
+    echo "❌ Frontend Health Check: FEHLER"
+    echo "Nginx Logs:"
+    docker compose logs --tail=10 nginx
+fi
+
+if curl -f -s http://localhost/api/health/ > /dev/null 2>&1; then
+    echo "✅ API Health Check: OK"
+else
+    echo "❌ API Health Check: FEHLER"
+    echo "Nginx Logs:"
+    docker compose logs --tail=10 nginx
 fi
 
 echo ""
