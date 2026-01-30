@@ -1,11 +1,19 @@
 # S3 Storage Setup
 
-FlipRead unterstützt AWS S3 als Storage-Backend für Media- und Published-Dateien. Dies ist besonders wichtig, wenn mehrere Benutzer die Plattform nutzen, da lokaler Speicher schnell voll werden kann.
+FlipRead unterstützt S3-kompatible Storage-Services (AWS S3, SafeS3, MinIO, etc.) als Storage-Backend für Media- und Published-Dateien. Dies ist besonders wichtig, wenn mehrere Benutzer die Plattform nutzen, da lokaler Speicher schnell voll werden kann.
+
+## Unterstützte Services
+
+- **AWS S3**: Standard Amazon S3
+- **SafeS3**: S3-kompatibler Service
+- **MinIO**: Self-hosted S3-kompatible Lösung
+- **Andere S3-kompatible Services**: Jeder Service, der die S3 API unterstützt
 
 ## Konfiguration
 
-### 1. AWS S3 Bucket erstellen
+### 1. S3 Bucket erstellen
 
+#### Für AWS S3:
 1. Erstellen Sie einen S3 Bucket in AWS
 2. Notieren Sie sich die Bucket-Name und Region
 3. Erstellen Sie IAM-Credentials mit folgenden Berechtigungen:
@@ -14,10 +22,16 @@ FlipRead unterstützt AWS S3 als Storage-Backend für Media- und Published-Datei
    - `s3:DeleteObject`
    - `s3:ListBucket`
 
+#### Für SafeS3 oder andere S3-kompatible Services:
+1. Erstellen Sie einen Bucket in Ihrem Service
+2. Notieren Sie sich die Endpoint-URL (z.B. `https://s3.safes3.com`)
+3. Erstellen Sie Access Keys mit entsprechenden Berechtigungen
+
 ### 2. Environment Variables setzen
 
 Fügen Sie folgende Variablen zur `.env` Datei hinzu:
 
+#### Für AWS S3:
 ```bash
 # S3 Storage aktivieren
 USE_S3=True
@@ -29,6 +43,28 @@ AWS_STORAGE_BUCKET_NAME=your-bucket-name
 AWS_S3_REGION_NAME=eu-central-1
 
 # Optional: Custom Domain (z.B. CloudFront CDN)
+AWS_S3_CUSTOM_DOMAIN=cdn.flipread.de
+```
+
+#### Für SafeS3 oder andere S3-kompatible Services:
+```bash
+# S3 Storage aktivieren
+USE_S3=True
+
+# S3 Credentials
+AWS_ACCESS_KEY_ID=your_access_key_id
+AWS_SECRET_ACCESS_KEY=your_secret_access_key
+AWS_STORAGE_BUCKET_NAME=your-bucket-name
+
+# WICHTIG: Endpoint URL für S3-kompatible Services
+AWS_S3_ENDPOINT_URL=https://s3.safes3.com
+# Oder für andere Services:
+# AWS_S3_ENDPOINT_URL=https://s3.your-provider.com
+# AWS_S3_ENDPOINT_URL=https://minio.example.com:9000
+
+AWS_S3_REGION_NAME=eu-central-1  # Kann bei manchen Services ignoriert werden
+
+# Optional: Custom Domain (z.B. CDN)
 AWS_S3_CUSTOM_DOMAIN=cdn.flipread.de
 ```
 

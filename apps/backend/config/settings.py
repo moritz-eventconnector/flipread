@@ -101,12 +101,13 @@ TIME_ZONE = 'Europe/Berlin'
 USE_I18N = True
 USE_TZ = True
 
-# AWS S3 Configuration
+# S3-Compatible Storage Configuration (AWS S3, SafeS3, etc.)
 USE_S3 = env.bool('USE_S3', default=False)
 AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')
 AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY', default='')
 AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME', default='')
 AWS_S3_REGION_NAME = env('AWS_S3_REGION_NAME', default='eu-central-1')
+AWS_S3_ENDPOINT_URL = env('AWS_S3_ENDPOINT_URL', default='')  # For S3-compatible services (e.g. SafeS3)
 AWS_S3_CUSTOM_DOMAIN = env('AWS_S3_CUSTOM_DOMAIN', default='')  # Optional: CDN domain
 AWS_S3_OBJECT_PARAMETERS = {
     'CacheControl': 'max-age=86400',
@@ -127,7 +128,15 @@ else:
 # Media files
 if USE_S3:
     DEFAULT_FILE_STORAGE = 'projects.storage.MediaStorage'
-    MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN or f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"}/media/'
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+    elif AWS_S3_ENDPOINT_URL:
+        # S3-compatible service (e.g. SafeS3)
+        endpoint_host = AWS_S3_ENDPOINT_URL.replace('https://', '').replace('http://', '').split('/')[0]
+        MEDIA_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/media/'
+    else:
+        # Standard AWS S3
+        MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/media/'
     MEDIA_ROOT = None
 else:
     MEDIA_URL = '/media/'
@@ -136,7 +145,15 @@ else:
 # Published flipbooks
 if USE_S3:
     PUBLISHED_STORAGE = 'projects.storage.PublishedStorage'
-    PUBLISHED_URL = f'https://{AWS_S3_CUSTOM_DOMAIN or f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"}/published/'
+    if AWS_S3_CUSTOM_DOMAIN:
+        PUBLISHED_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/published/'
+    elif AWS_S3_ENDPOINT_URL:
+        # S3-compatible service (e.g. SafeS3)
+        endpoint_host = AWS_S3_ENDPOINT_URL.replace('https://', '').replace('http://', '').split('/')[0]
+        PUBLISHED_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/published/'
+    else:
+        # Standard AWS S3
+        PUBLISHED_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/published/'
     PUBLISHED_ROOT = None
 else:
     PUBLISHED_ROOT = BASE_DIR / 'published'
