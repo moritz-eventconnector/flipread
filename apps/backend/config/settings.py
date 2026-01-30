@@ -226,11 +226,16 @@ EMAIL_HOST = env('EMAIL_HOST', default='')
 EMAIL_PORT = env.int('EMAIL_PORT', default=587)
 EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+# Port 465 uses SSL, port 587 uses TLS
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_USE_SSL = env.bool('EMAIL_USE_SSL', default=False)
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@flipread.de')
 
 # Email Verification
 ENABLE_EMAIL_VERIFICATION = env.bool('ENABLE_EMAIL_VERIFICATION', default=False)
+
+# 2FA per Email
+ENABLE_2FA_EMAIL = env.bool('ENABLE_2FA_EMAIL', default=False)
 
 # Stripe
 STRIPE_SECRET_KEY = env('STRIPE_SECRET_KEY', default='')
