@@ -257,6 +257,17 @@ sleep 15  # Mehr Zeit für PostgreSQL
 
 echo ""
 echo "=========================================="
+echo "Erstelle Migrationen..."
+echo "=========================================="
+
+# Create migrations for all apps
+docker compose exec -T backend python manage.py makemigrations accounts || true
+docker compose exec -T backend python manage.py makemigrations projects || true
+docker compose exec -T backend python manage.py makemigrations billing || true
+docker compose exec -T backend python manage.py makemigrations || true
+
+echo ""
+echo "=========================================="
 echo "Führe Migrationen aus..."
 echo "=========================================="
 
