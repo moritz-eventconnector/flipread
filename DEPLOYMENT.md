@@ -20,8 +20,7 @@ cd flipread
 ### 3. Installation ausführen
 
 ```bash
-sudo chmod +x scripts/install.sh
-sudo ./scripts/install.sh
+sudo bash scripts/install.sh
 ```
 
 Das Skript führt Sie durch:
@@ -58,7 +57,7 @@ Das Skript führt Sie durch:
 ## Updates
 
 ```bash
-sudo ./scripts/update.sh
+sudo bash scripts/update.sh
 ```
 
 ## Wartung

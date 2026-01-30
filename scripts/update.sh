@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# Make script executable if it isn't already
+if [ ! -x "$0" ]; then
+    chmod +x "$0" 2>/dev/null || true
+fi
+
 echo "=========================================="
 echo "FlipRead Update Script"
 echo "=========================================="

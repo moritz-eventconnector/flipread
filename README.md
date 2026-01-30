@@ -29,8 +29,7 @@ Für schnelle Tests ohne Email und Stripe:
 ```bash
 git clone <repository-url> flipread
 cd flipread
-chmod +x scripts/install.sh
-sudo ./scripts/install.sh --dev
+sudo bash scripts/install.sh --dev
 ```
 
 Im DEV MODE:
@@ -44,8 +43,7 @@ Im DEV MODE:
 ```bash
 git clone <repository-url> flipread
 cd flipread
-chmod +x scripts/install.sh
-sudo ./scripts/install.sh
+sudo bash scripts/install.sh
 ```
 
 Das Skript fragt nach:
@@ -127,8 +125,12 @@ sudo ufw enable
 ## 🔄 Updates
 
 ```bash
-chmod +x scripts/update.sh
-sudo ./scripts/update.sh
+sudo bash scripts/update.sh
+```
+
+Oder (wenn ausführbar):
+```bash
+sudo bash scripts/update.sh
 ```
 
 Oder manuell:

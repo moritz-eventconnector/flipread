@@ -20,8 +20,7 @@ cd flipread
 #### Option A: DEV MODE (für schnelle Tests)
 
 ```bash
-sudo chmod +x scripts/install.sh
-sudo ./scripts/install.sh --dev
+sudo bash scripts/install.sh --dev
 ```
 
 **DEV MODE Features:**
@@ -37,8 +36,7 @@ sudo ./scripts/install.sh --dev
 #### Option B: Produktions-Installation
 
 ```bash
-sudo chmod +x scripts/install.sh
-sudo ./scripts/install.sh
+sudo bash scripts/install.sh
 ```
 
 Das Skript fragt nach:
@@ -106,7 +104,7 @@ EMAIL_HOST_PASSWORD=your-app-password
 ## 🔄 Updates
 
 ```bash
-sudo ./scripts/update.sh
+sudo bash scripts/update.sh
 ```
 
 ## ❓ Hilfe
