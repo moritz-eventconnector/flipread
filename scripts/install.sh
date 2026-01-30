@@ -124,7 +124,7 @@ if [ "$DEV_MODE" = true ]; then
 # Django
 DEBUG=True
 SECRET_KEY=$SECRET_KEY
-ALLOWED_HOSTS=$DOMAIN,www.$DOMAIN,localhost,127.0.0.1
+ALLOWED_HOSTS=$DOMAIN,localhost,127.0.0.1
 SITE_URL=https://$DOMAIN
 
 # Database
@@ -160,7 +160,7 @@ else
 # Django
 DEBUG=False
 SECRET_KEY=$SECRET_KEY
-ALLOWED_HOSTS=$DOMAIN,www.$DOMAIN
+ALLOWED_HOSTS=$DOMAIN
 SITE_URL=https://$DOMAIN
 
 # Database
@@ -217,7 +217,7 @@ echo "Erstelle lokale Nginx-Konfiguration..."
 if [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
     # Create HTTP-only config first (SSL will be enabled after certificates are created)
     # First create the config with domain replacement
-    sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
     # Then convert to HTTP-only using fix script
     if [ -f scripts/fix-nginx-ssl.sh ]; then
         bash scripts/fix-nginx-ssl.sh
@@ -236,7 +236,7 @@ upstream frontend {
 # HTTP server (SSL will be enabled after certificate creation)
 server {
     listen 80;
-    server_name $DOMAIN www.$DOMAIN;
+    server_name $DOMAIN;
 
     # Let's Encrypt challenge
     location /.well-known/acme-challenge/ {
@@ -594,7 +594,7 @@ else
         echo "✅ SSL-Zertifikate existieren bereits für $DOMAIN"
         CERTBOT_EXIT=0
     else
-        echo "Erstelle neue SSL-Zertifikate für $DOMAIN und www.$DOMAIN..."
+        echo "Erstelle neue SSL-Zertifikate für $DOMAIN..."
         
         # Delete any existing certificates for this domain first (ignore errors if none exist)
         echo "Prüfe auf vorhandene Zertifikate..."
@@ -607,7 +607,7 @@ else
         echo "Warte auf Let's Encrypt..."
         echo ""
         
-        # Execute certbot directly - override entrypoint completely
+        # Create certificate for main domain only (no www)
         if docker compose run --rm --entrypoint "" certbot certbot certonly \
           --webroot \
           --webroot-path=/var/www/certbot \
@@ -616,19 +616,18 @@ else
           --no-eff-email \
           --non-interactive \
           -d "$DOMAIN" \
-          -d "www.$DOMAIN" \
           --verbose 2>&1 | tee /tmp/certbot_output.log; then
             CERTBOT_CMD_EXIT=0
         else
             CERTBOT_CMD_EXIT=$?
         fi
         
-        # Check if certificates were created (regardless of exit code, check file)
+        # Check if certificates were created
         sleep 3
         if docker compose exec -T nginx test -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" 2>/dev/null; then
             CERTBOT_EXIT=0
             echo ""
-            echo "✅ Zertifikate erfolgreich erstellt!"
+            echo "✅ Zertifikate erfolgreich erstellt für $DOMAIN!"
         else
             CERTBOT_EXIT=1
             echo ""
@@ -652,7 +651,7 @@ if [ "$CERTBOT_EXIT" = "0" ]; then
         echo "✅ SSL-Konfiguration wiederhergestellt"
     else
         # Recreate SSL config from template
-        sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+        sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
         echo "✅ SSL-Konfiguration neu erstellt"
     fi
     

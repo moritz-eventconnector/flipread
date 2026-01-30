@@ -44,7 +44,7 @@ upstream frontend {
 # HTTP server (SSL disabled - certificates not available)
 server {
     listen 80;
-    server_name $DOMAIN www.$DOMAIN;
+    server_name $DOMAIN;
 
     # Let's Encrypt challenge
     location /.well-known/acme-challenge/ {
