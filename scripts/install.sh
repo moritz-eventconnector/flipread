@@ -207,9 +207,15 @@ echo "=========================================="
 echo "Starte Docker Container..."
 echo "=========================================="
 
-# Update domain in nginx config
-sed -i "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf
-sed -i "s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf
+# Create local nginx config with domain replacement (don't modify original)
+echo ""
+echo "Erstelle lokale Nginx-Konfiguration..."
+if [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
+    sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    echo "✅ Lokale Nginx-Konfiguration erstellt: infra/nginx/conf.d/flipread.local.conf"
+else
+    echo "ℹ️  Lokale Nginx-Konfiguration existiert bereits, wird beibehalten"
+fi
 
 # SSL is now enabled in both dev and production mode
 # No need to disable HTTPS redirect
@@ -252,8 +258,36 @@ echo ""
 echo "Starte Container..."
 docker compose up -d
 
-echo "Warte auf Datenbank..."
-sleep 15  # Mehr Zeit für PostgreSQL
+echo "Warte auf Datenbank und Backend..."
+# Wait for backend to be healthy
+MAX_WAIT=60
+WAIT_COUNT=0
+while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+    if docker compose ps backend | grep -q "Up"; then
+        # Check if container is actually running (not restarting)
+        if ! docker compose ps backend | grep -q "Restarting"; then
+            echo "✅ Backend Container läuft"
+            break
+        fi
+    fi
+    sleep 2
+    WAIT_COUNT=$((WAIT_COUNT + 2))
+    echo "Warte auf Backend... ($WAIT_COUNT/$MAX_WAIT Sekunden)"
+done
+
+# Check if backend is still restarting
+if docker compose ps backend | grep -q "Restarting"; then
+    echo ""
+    echo "⚠️  Backend Container startet nicht richtig!"
+    echo "Letzte Logs:"
+    docker compose logs --tail=50 backend
+    echo ""
+    echo "Bitte prüfen Sie die Logs oben für Fehlerdetails."
+    exit 1
+fi
+
+# Additional wait for database
+sleep 5
 
 echo ""
 echo "=========================================="
@@ -431,6 +465,11 @@ echo "Admin-Login:"
 echo "  Email: $ADMIN_EMAIL"
 echo "  Passwort: [wie eingegeben]"
 echo ""
+echo "Hinweis:"
+echo "  - Lokale Nginx-Konfiguration: infra/nginx/conf.d/flipread.local.conf"
+echo "  - Diese Datei ist in .gitignore und wird bei git pull nicht überschrieben"
+echo "  - Sie können jetzt 'git pull' ausführen, ohne Konflikte zu haben"
+echo ""
 
 if [ "$DEV_MODE" = true ]; then
     echo "═══════════════════════════════════════"
@@ -451,4 +490,9 @@ else
     echo "  3. Überprüfen Sie die SSL-Zertifikate"
     echo ""
 fi
+
+echo "Git-Hinweis:"
+echo "  - Lokale Dateien (.env, flipread.local.conf) sind in .gitignore"
+echo "  - Sie können jetzt 'git pull' ausführen, ohne Konflikte zu haben"
+echo ""
 

@@ -18,7 +18,33 @@ if [ ! -f .env ]; then
 fi
 
 echo "Hole neueste Änderungen..."
+
+# Check if local nginx config exists and preserve it
+DOMAIN=""
+if [ -f infra/nginx/conf.d/flipread.local.conf ]; then
+    echo "Lokale Nginx-Konfiguration wird beibehalten..."
+    # Extract domain from local config for later use
+    DOMAIN=$(grep -oP 'server_name \K[^ ]+' infra/nginx/conf.d/flipread.local.conf 2>/dev/null | head -1 || echo "")
+    # Temporarily rename to avoid git conflicts
+    mv infra/nginx/conf.d/flipread.local.conf infra/nginx/conf.d/flipread.local.conf.bak 2>/dev/null || true
+fi
+
 git pull
+
+# Restore local config
+if [ -f infra/nginx/conf.d/flipread.local.conf.bak ]; then
+    mv infra/nginx/conf.d/flipread.local.conf.bak infra/nginx/conf.d/flipread.local.conf
+    echo "✅ Lokale Nginx-Konfiguration wiederhergestellt"
+fi
+
+# Recreate local nginx config if domain was extracted but file doesn't exist
+if [ ! -z "$DOMAIN" ] && [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
+    echo "Erstelle lokale Nginx-Konfiguration neu..."
+    sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    # Update SSL paths
+    sed -i "s|/etc/letsencrypt/live/flipread.de|/etc/letsencrypt/live/$DOMAIN|g" infra/nginx/conf.d/flipread.local.conf
+    echo "✅ Lokale Nginx-Konfiguration neu erstellt"
+fi
 
 echo ""
 echo "Baue Docker Images..."
