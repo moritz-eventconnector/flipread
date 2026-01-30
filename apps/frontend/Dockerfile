@@ -34,7 +34,14 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
+
+# Copy standalone build
+# Next.js 14 with output: 'standalone' creates the entire app in .next/standalone
+# including server.js, node_modules, and .next/static
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+
+# Copy static files separately to ensure they're in the right place
+# (standalone already includes them, but this ensures compatibility)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
@@ -44,5 +51,6 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-CMD ["node", "server.js"]
+# Find and run server.js - Next.js 14 standalone creates it in the root of standalone
+CMD sh -c 'if [ -f ./server.js ]; then node server.js; elif [ -f ./app/server.js ]; then node ./app/server.js; else echo "ERROR: server.js not found. Directory contents:"; ls -laR . | head -50; exit 1; fi'
 

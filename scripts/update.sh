@@ -42,8 +42,12 @@ if [ ! -z "$LOCAL_CHANGES" ]; then
     echo ""
     
     # Discard local changes to tracked files (but keep untracked files like .env)
+    # This includes file mode changes (chmod) which might have been made by install.sh
     git checkout -- . 2>/dev/null || true
     git clean -fd 2>/dev/null || true
+    
+    # Restore execute permissions on scripts if they were lost
+    chmod +x scripts/*.sh 2>/dev/null || true
 fi
 
 # Now pull should work without conflicts

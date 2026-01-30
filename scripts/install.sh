@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Make script executable if it isn't already
+# Make script executable if it isn't already (only if needed, to avoid Git seeing it as a change)
 if [ ! -x "$0" ]; then
     chmod +x "$0" 2>/dev/null || true
 fi
@@ -540,6 +540,7 @@ echo ""
 echo "Hinweis:"
 echo "  - Lokale Nginx-Konfiguration: infra/nginx/conf.d/flipread.local.conf"
 echo "  - Diese Datei ist in .gitignore und wird bei git pull nicht überschrieben"
+echo "  - Git ist konfiguriert, Dateiberechtigungen zu ignorieren (core.fileMode=false)"
 echo "  - Sie können jetzt 'git pull' ausführen, ohne Konflikte zu haben"
 echo ""
 
