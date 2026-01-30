@@ -123,6 +123,10 @@ services:
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://backend:8000}
+        - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-pk_test_dev}
+        - NEXT_PUBLIC_SITE_URL=${SITE_URL:-https://flipread.de}
     container_name: flipread_frontend
     volumes:
       - ./apps/frontend:/app
@@ -130,7 +134,7 @@ services:
       - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://backend:8000}
-      - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+      - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY:-pk_test_dev}
       - NEXT_PUBLIC_SITE_URL=${SITE_URL:-https://flipread.de}
     depends_on:
       - backend

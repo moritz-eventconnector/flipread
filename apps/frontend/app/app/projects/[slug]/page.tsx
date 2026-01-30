@@ -31,6 +31,7 @@ export default function ProjectDetailPage() {
     loadProject()
     const interval = setInterval(loadProject, 5000) // Poll every 5 seconds
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.slug])
 
   const loadProject = async () => {

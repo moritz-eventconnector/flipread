@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import api from '@/lib/api'
-import { FlipbookViewer } from '@/app/components/FlipbookViewer'
+import { FlipbookViewer } from '@/app/app/components/FlipbookViewer'
 
 interface Project {
   slug: string
@@ -34,6 +34,7 @@ export default function PreviewPage() {
 
   useEffect(() => {
     loadProject()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.slug])
 
   const loadProject = async () => {
