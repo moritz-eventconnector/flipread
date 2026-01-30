@@ -248,14 +248,70 @@ echo "Starte Container..."
 docker compose up -d
 
 echo "Warte auf Datenbank..."
-sleep 10
+sleep 15  # Mehr Zeit für PostgreSQL
 
 echo ""
 echo "=========================================="
 echo "Führe Migrationen aus..."
 echo "=========================================="
 
-docker compose exec -T backend python manage.py migrate
+# Try migration, catch password errors
+if ! docker compose exec -T backend python manage.py migrate 2>&1 | tee /tmp/migrate_output.log; then
+    MIGRATE_OUTPUT=$(cat /tmp/migrate_output.log 2>/dev/null || echo "")
+    
+    # Check if it's a password error
+    if echo "$MIGRATE_OUTPUT" | grep -q "password authentication failed"; then
+        echo ""
+        echo "⚠️  Datenbank-Passwort-Fehler erkannt!"
+        echo "Das Passwort in .env stimmt nicht mit dem initialen PostgreSQL-Passwort überein."
+        echo ""
+        
+        if [ "$DEV_MODE" = true ]; then
+            echo "Im DEV MODE können die Volumes gelöscht werden, um das Problem zu beheben."
+            read -p "Volumes löschen und neu starten? (yes/no) [yes]: " FIX_DB
+            FIX_DB=${FIX_DB:-yes}
+            
+            if [ "$FIX_DB" = "yes" ]; then
+                echo ""
+                echo "Stoppe Container und lösche Volumes..."
+                docker compose down -v
+                
+                echo ""
+                echo "Starte Container neu..."
+                docker compose up -d
+                
+                echo "Warte auf Datenbank..."
+                sleep 15
+                
+                echo ""
+                echo "Führe Migrationen erneut aus..."
+                docker compose exec -T backend python manage.py migrate
+            else
+                echo ""
+                echo "❌ Installation abgebrochen."
+                echo "Bitte löschen Sie die Volumes manuell: docker compose down -v"
+                exit 1
+            fi
+        else
+            echo ""
+            echo "❌ Datenbank-Passwort-Fehler!"
+            echo ""
+            echo "Lösung:"
+            echo "  1. Prüfen Sie POSTGRES_PASSWORD in .env"
+            echo "  2. Oder löschen Sie die Volumes: docker compose down -v"
+            echo "  3. Starten Sie neu: docker compose up -d"
+            exit 1
+        fi
+    else
+        # Other migration error
+        echo ""
+        echo "❌ Migration fehlgeschlagen!"
+        echo "Bitte prüfen Sie die Fehlermeldung oben."
+        exit 1
+    fi
+fi
+
+rm -f /tmp/migrate_output.log
 
 echo ""
 echo "=========================================="
