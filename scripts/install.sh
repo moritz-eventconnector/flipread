@@ -368,14 +368,33 @@ echo "=========================================="
 echo "Erstelle Admin-User..."
 echo "=========================================="
 
-docker compose exec -T backend python manage.py createsuperuser --noinput --email "$ADMIN_EMAIL" || true
-
-# Set password via Django shell
+# Create or update admin user via Django shell
 docker compose exec -T backend python manage.py shell <<EOF
 from accounts.models import User
-user = User.objects.get(email="$ADMIN_EMAIL")
-user.set_password("$ADMIN_PASSWORD")
-user.save()
+
+try:
+    user = User.objects.get(email="$ADMIN_EMAIL")
+    print("User existiert bereits, aktualisiere...")
+    user.set_password("$ADMIN_PASSWORD")
+    user.is_staff = True
+    user.is_superuser = True
+    user.is_active = True
+    user.role = 'admin'
+    user.is_email_verified = True
+    user.save()
+    print("Admin-User aktualisiert")
+except User.DoesNotExist:
+    user = User.objects.create_user(
+        email="$ADMIN_EMAIL",
+        password="$ADMIN_PASSWORD",
+        is_staff=True,
+        is_superuser=True,
+        is_active=True,
+        role='admin',
+        is_email_verified=True
+    )
+    print("Admin-User erstellt")
+
 print("Admin-Passwort gesetzt")
 EOF
 
