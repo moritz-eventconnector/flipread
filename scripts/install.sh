@@ -444,35 +444,63 @@ echo "=========================================="
 echo "Richte SSL-Zertifikat ein..."
 echo "=========================================="
 
-# Stop nginx temporarily for SSL setup
-docker compose stop nginx 2>/dev/null || true
+# Start nginx first (needed for certbot webroot validation)
+echo "Starte Nginx für SSL-Setup..."
+docker compose up -d nginx
+
+# Wait for nginx to be ready
+echo "Warte auf Nginx..."
+sleep 5
 
 # Run certbot (may fail if domain not pointing to server)
+# Use timeout command if available, otherwise run without timeout
 echo "Versuche SSL-Zertifikat zu erstellen..."
-if docker compose run --rm certbot certonly --webroot \
-  --webroot-path=/var/www/certbot \
-  --email "$EMAIL" \
-  --agree-tos \
-  --no-eff-email \
-  -d "$DOMAIN" \
-  -d "www.$DOMAIN" 2>&1; then
-    echo "✅ SSL-Zertifikat erfolgreich erstellt"
+echo "Hinweis: Dies kann einige Minuten dauern..."
+
+if command -v timeout &> /dev/null; then
+    # Use timeout if available (Linux)
+    if timeout 120 docker compose run --rm certbot certonly --webroot \
+      --webroot-path=/var/www/certbot \
+      --email "$EMAIL" \
+      --agree-tos \
+      --no-eff-email \
+      --non-interactive \
+      -d "$DOMAIN" \
+      -d "www.$DOMAIN" > /tmp/certbot_output.log 2>&1; then
+        echo "✅ SSL-Zertifikat erfolgreich erstellt"
+    else
+        CERTBOT_FAILED=true
+    fi
 else
+    # Without timeout (should still work, but may hang)
+    if docker compose run --rm certbot certonly --webroot \
+      --webroot-path=/var/www/certbot \
+      --email "$EMAIL" \
+      --agree-tos \
+      --no-eff-email \
+      --non-interactive \
+      -d "$DOMAIN" \
+      -d "www.$DOMAIN" > /tmp/certbot_output.log 2>&1; then
+        echo "✅ SSL-Zertifikat erfolgreich erstellt"
+    else
+        CERTBOT_FAILED=true
+    fi
+fi
+
+if [ "${CERTBOT_FAILED:-false}" = "true" ]; then
     echo ""
     echo "⚠️  SSL-Zertifikat konnte nicht erstellt werden."
+    echo "Letzte Ausgabe:"
+    tail -20 /tmp/certbot_output.log 2>/dev/null || true
+    echo ""
     echo "Mögliche Gründe:"
     echo "  - Domain zeigt nicht auf diesen Server"
     echo "  - Port 80 ist nicht erreichbar"
     echo "  - Let's Encrypt Rate Limit erreicht"
     echo ""
-    echo "Nginx wird trotzdem gestartet. Sie können SSL später manuell einrichten:"
+    echo "Nginx läuft trotzdem. Sie können SSL später manuell einrichten:"
     echo "  docker compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot -d $DOMAIN"
 fi
-
-# Start nginx (even if SSL failed)
-echo ""
-echo "Starte Nginx..."
-docker compose start nginx || docker compose up -d nginx
 
 echo ""
 echo "=========================================="
