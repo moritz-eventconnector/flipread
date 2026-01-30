@@ -29,6 +29,24 @@ if [ -f infra/nginx/conf.d/flipread.local.conf ]; then
     mv infra/nginx/conf.d/flipread.local.conf infra/nginx/conf.d/flipread.local.conf.bak 2>/dev/null || true
 fi
 
+# Check for local changes in tracked files (excluding .env and flipread.local.conf which are in .gitignore)
+LOCAL_CHANGES=$(git status --porcelain 2>/dev/null | grep -v "^??" | grep -v ".env" | grep -v "flipread.local.conf" || true)
+
+if [ ! -z "$LOCAL_CHANGES" ]; then
+    echo ""
+    echo "⚠️  Lokale Änderungen an versionierten Dateien gefunden:"
+    echo "$LOCAL_CHANGES" | sed 's/^/  /'
+    echo ""
+    echo "Diese Änderungen werden verworfen und durch die Remote-Version ersetzt."
+    echo "Lokale Dateien (.env, flipread.local.conf) bleiben erhalten."
+    echo ""
+    
+    # Discard local changes to tracked files (but keep untracked files like .env)
+    git checkout -- . 2>/dev/null || true
+    git clean -fd 2>/dev/null || true
+fi
+
+# Now pull should work without conflicts
 git pull
 
 # Restore local config

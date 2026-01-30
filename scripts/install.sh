@@ -252,7 +252,15 @@ fi
 # Build and start containers
 echo ""
 echo "Baue Container..."
-docker compose build
+
+# Try to build, if it fails, clean cache and retry
+if ! docker compose build 2>&1 | tee /tmp/build_output.log; then
+    echo ""
+    echo "⚠️  Build fehlgeschlagen. Lösche Build-Cache und versuche erneut..."
+    docker builder prune -af 2>/dev/null || true
+    echo "Baue Container erneut (ohne Cache)..."
+    docker compose build --no-cache
+fi
 
 echo ""
 echo "Starte Container..."
