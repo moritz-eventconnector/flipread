@@ -211,6 +211,12 @@ Ihr FlipRead Team
             
             # Send email - this is required for 2FA
             try:
+                # Check if email is configured
+                if not settings.EMAIL_HOST:
+                    raise ValueError("EMAIL_HOST is not configured")
+                if not settings.EMAIL_HOST_USER:
+                    raise ValueError("EMAIL_HOST_USER is not configured")
+                
                 send_mail(
                     subject='Ihr FlipRead Login-Code',
                     message=plain_message,
@@ -219,6 +225,10 @@ Ihr FlipRead Team
                     recipient_list=[user.email],
                     fail_silently=False,
                 )
+                # Log success
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"2FA login code sent successfully to {user.email}")
             except Exception as e:
                 # Log the error with full details
                 import logging
@@ -226,6 +236,7 @@ Ihr FlipRead Team
                 logger = logging.getLogger(__name__)
                 logger.error(f"Failed to send login code email to {user.email}: {str(e)}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
+                logger.error(f"Email config - HOST: {settings.EMAIL_HOST or 'NOT SET'}, PORT: {settings.EMAIL_PORT}, USER: {settings.EMAIL_HOST_USER or 'NOT SET'}, USE_TLS: {settings.EMAIL_USE_TLS}, USE_SSL: {getattr(settings, 'EMAIL_USE_SSL', False)}")
                 # Return detailed error for debugging
                 error_response = {
                     'error': f'Failed to send login code email: {str(e)}. Please check email configuration.',
@@ -236,6 +247,8 @@ Ihr FlipRead Team
                         'email_host': settings.EMAIL_HOST or 'NOT SET',
                         'email_port': settings.EMAIL_PORT,
                         'email_user': settings.EMAIL_HOST_USER or 'NOT SET',
+                        'email_use_tls': settings.EMAIL_USE_TLS,
+                        'email_use_ssl': getattr(settings, 'EMAIL_USE_SSL', False),
                         'from_email': settings.DEFAULT_FROM_EMAIL,
                     }
                 return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

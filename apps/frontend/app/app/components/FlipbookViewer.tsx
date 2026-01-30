@@ -26,21 +26,55 @@ interface FlipbookViewerProps {
 }
 
 // Page component for react-pageflip (requires forwardRef)
-const Page = React.forwardRef<HTMLDivElement, { imageUrl: string; pageNumber: number; zoom: number }>(
-  ({ imageUrl, pageNumber, zoom }, ref) => {
+const Page = React.forwardRef<HTMLDivElement, { 
+  imageUrl: string
+  pageNumber: number
+  zoom: number
+  magnifierActive: boolean
+  onMagnifierMove: (x: number, y: number, mouseX: number, mouseY: number) => void
+  magnifierZoom: number
+}>(
+  ({ imageUrl, pageNumber, zoom, magnifierActive, onMagnifierMove, magnifierZoom }, ref) => {
+    const imgRef = useRef<HTMLImageElement>(null)
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!magnifierActive || !imgRef.current || !containerRef.current) return
+      
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const imgRect = imgRef.current.getBoundingClientRect()
+      
+      // Calculate relative position within the image
+      const relativeX = ((e.clientX - imgRect.left) / imgRect.width) * 100
+      const relativeY = ((e.clientY - imgRect.top) / imgRect.height) * 100
+      
+      onMagnifierMove(relativeX, relativeY, e.clientX, e.clientY)
+    }
+
     return (
-      <div ref={ref} className="page" style={{ width: '100%', height: '100%' }}>
-        <div className="page-content" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <div 
+        ref={ref} 
+        className="page" 
+        style={{ width: '100%', height: '100%', position: 'relative' }}
+      >
+        <div 
+          ref={containerRef}
+          className="page-content" 
+          style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+          onMouseMove={handleMouseMove}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            ref={imgRef}
             src={imageUrl}
             alt={`Seite ${pageNumber}`}
             style={{ 
               maxWidth: `${100 * zoom}%`, 
               maxHeight: `${100 * zoom}%`, 
               objectFit: 'contain',
-              transition: 'transform 0.3s ease',
-              transform: `scale(${zoom})`
+              transition: magnifierActive ? 'none' : 'transform 0.3s ease',
+              transform: `scale(${zoom})`,
+              cursor: magnifierActive ? 'none' : 'default'
             }}
             loading="lazy"
           />
@@ -94,6 +128,11 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [zoom, setZoom] = useState(1)
   const [showThumbnails, setShowThumbnails] = useState(false)
+  const [showNavigation, setShowNavigation] = useState(true)
+  const [magnifierActive, setMagnifierActive] = useState(false)
+  const [magnifierPosition, setMagnifierPosition] = useState({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
+  const [magnifierZoom, setMagnifierZoom] = useState(2)
+  const hideNavigationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Calculate dimensions based on first page
   const firstPage = project.pages_json?.pages?.[0]
@@ -231,6 +270,43 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     setZoom(1)
   }
 
+  // Auto-hide navigation after inactivity
+  useEffect(() => {
+    const resetHideTimer = () => {
+      setShowNavigation(true)
+      if (hideNavigationTimeoutRef.current) {
+        clearTimeout(hideNavigationTimeoutRef.current)
+      }
+      hideNavigationTimeoutRef.current = setTimeout(() => {
+        setShowNavigation(false)
+      }, 3000) // Hide after 3 seconds of inactivity
+    }
+
+    resetHideTimer()
+
+    const handleMouseMove = () => {
+      resetHideTimer()
+    }
+
+    const handleMouseLeave = () => {
+      if (hideNavigationTimeoutRef.current) {
+        clearTimeout(hideNavigationTimeoutRef.current)
+      }
+      setShowNavigation(false)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseleave', handleMouseLeave)
+
+    return () => {
+      if (hideNavigationTimeoutRef.current) {
+        clearTimeout(hideNavigationTimeoutRef.current)
+      }
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseleave', handleMouseLeave)
+    }
+  }, [])
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -260,6 +336,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         } else if (e.key === '0') {
           e.preventDefault()
           handleZoomReset()
+        } else if (e.key === 'm' || e.key === 'M') {
+          e.preventDefault()
+          setMagnifierActive(!magnifierActive)
         }
       } catch (error) {
         console.warn('FlipbookViewer: Keyboard navigation error', error)
@@ -271,7 +350,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       window.removeEventListener('keydown', handleKeyDown)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, totalPages])
+  }, [currentPage, totalPages, magnifierActive])
 
   if (!project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {
     return (
@@ -338,6 +417,21 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
               )}
             </div>
 
+            {/* Magnifier Toggle */}
+            <button
+              onClick={() => setMagnifierActive(!magnifierActive)}
+              className={`p-2 rounded-lg transition-colors ${
+                magnifierActive 
+                  ? 'bg-primary-600 text-white' 
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+              title="Lupe aktivieren (M) - Hovern Sie über die Seite zum Zoomen"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+              </svg>
+            </button>
+
             {/* Thumbnail Toggle */}
             <button
               onClick={() => setShowThumbnails(!showThumbnails)}
@@ -354,8 +448,58 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         </div>
       </div>
 
+      {/* Magnifier Lens */}
+      {magnifierActive && imageUrls[currentPage] && magnifierPosition.mouseX > 0 && (
+        <div
+          className="magnifier-lens fixed pointer-events-none z-[1000]"
+          style={{
+            width: 200,
+            height: 200,
+            borderRadius: '50%',
+            border: '3px solid white',
+            boxShadow: '0 0 20px rgba(0,0,0,0.5), 0 0 40px rgba(0,0,0,0.3)',
+            overflow: 'hidden',
+            background: `url(${imageUrls[currentPage]}) no-repeat`,
+            backgroundSize: `${zoom * magnifierZoom * 100}%`,
+            backgroundPosition: `${magnifierPosition.x}% ${magnifierPosition.y}%`,
+            display: 'block',
+            left: `${magnifierPosition.mouseX - 100}px`,
+            top: `${magnifierPosition.mouseY - 100}px`,
+            transition: 'none',
+            cursor: 'none'
+          }}
+        />
+      )}
+
       {/* Main Content Area */}
-      <div className="flex-1 flex items-center justify-center pt-16 pb-24 px-4 overflow-hidden">
+      <div 
+        className="flex-1 flex items-center justify-center pt-16 pb-24 px-4 overflow-hidden"
+        onMouseMove={(e) => {
+          if (magnifierActive && imageUrls[currentPage]) {
+            // Get the flipbook container
+            const flipbookEl = document.querySelector('.flipbook-container') as HTMLElement
+            if (!flipbookEl) return
+            
+            const rect = flipbookEl.getBoundingClientRect()
+            const x = e.clientX - rect.left
+            const y = e.clientY - rect.top
+            
+            // Check if mouse is over the flipbook
+            if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
+              // Calculate relative position within the flipbook
+              const relativeX = (x / rect.width) * 100
+              const relativeY = (y / rect.height) * 100
+              
+              setMagnifierPosition({ 
+                x: relativeX, 
+                y: relativeY, 
+                mouseX: e.clientX, 
+                mouseY: e.clientY 
+              })
+            }
+          }
+        }}
+      >
         <div className="flipbook-wrapper w-full h-full flex justify-center items-center">
           <HTMLFlipBook
             ref={flipBookRef}
@@ -379,10 +523,10 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             startZIndex={0}
             autoSize={true}
             clickEventForward={true}
-            useMouseEvents={true}
+            useMouseEvents={!magnifierActive}
             swipeDistance={30}
             showPageCorners={true}
-            disableFlipByClick={false}
+            disableFlipByClick={magnifierActive}
           >
             {imageUrls.map((imageUrl, index) => (
               <Page
@@ -390,55 +534,57 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
                 imageUrl={imageUrl}
                 pageNumber={index + 1}
                 zoom={zoom}
+                magnifierActive={magnifierActive}
+                onMagnifierMove={(relX, relY, mouseX, mouseY) => {
+                  setMagnifierPosition({ x: relX, y: relY, mouseX, mouseY })
+                }}
+                magnifierZoom={magnifierZoom}
               />
             ))}
           </HTMLFlipBook>
         </div>
       </div>
 
-      {/* Bottom Navigation Bar */}
-      <div className="absolute bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 shadow-lg">
-        <div className="flex items-center justify-between px-4 py-4">
+      {/* Floating Navigation Buttons - Subtle and Auto-hide */}
+      <div 
+        className={`fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ${
+          showNavigation ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        }`}
+        onMouseEnter={() => setShowNavigation(true)}
+        onMouseLeave={() => {
+          if (hideNavigationTimeoutRef.current) {
+            clearTimeout(hideNavigationTimeoutRef.current)
+          }
+          hideNavigationTimeoutRef.current = setTimeout(() => {
+            setShowNavigation(false)
+          }, 2000)
+        }}
+      >
+        <div className="flex items-center gap-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg rounded-full px-4 py-2 shadow-xl border border-gray-200/50 dark:border-gray-700/50">
           {/* Previous Button */}
           <button
             onClick={flipPrev}
             disabled={currentPage === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105 disabled:transform-none shadow-md"
+            className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 disabled:hover:scale-100"
             title="Vorherige Seite (←)"
           >
             <ChevronLeftIcon className="w-5 h-5" />
-            <span className="hidden sm:inline">Zurück</span>
           </button>
 
           {/* Page Info */}
-          <div className="flex flex-col items-center gap-1">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">Seite</span>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">
-                {currentPage + 1}
-              </span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">von</span>
-              <span className="text-lg font-bold text-gray-900 dark:text-white">
-                {totalPages}
-              </span>
-            </div>
-            {/* Progress Bar */}
-            <div className="w-64 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary-600 transition-all duration-300"
-                style={{ width: `${((currentPage + 1) / totalPages) * 100}%` }}
-              />
-            </div>
+          <div className="flex items-center gap-2 px-3">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {currentPage + 1} / {totalPages}
+            </span>
           </div>
 
           {/* Next Button */}
           <button
             onClick={flipNext}
             disabled={currentPage >= totalPages - 1}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105 disabled:transform-none shadow-md"
+            className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 disabled:hover:scale-100"
             title="Nächste Seite (→)"
           >
-            <span className="hidden sm:inline">Weiter</span>
             <ChevronRightIcon className="w-5 h-5" />
           </button>
         </div>
@@ -466,7 +612,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
                     goToPage(index)
                     setShowThumbnails(false)
                   }}
-                  className={`relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all ${
+                  className={`relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
                     index === currentPage
                       ? 'border-primary-600 ring-2 ring-primary-300 dark:ring-primary-800'
                       : 'border-gray-200 dark:border-gray-700 hover:border-primary-400 dark:hover:border-primary-600'
@@ -478,6 +624,10 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
                     alt={`Seite ${index + 1}`}
                     className="w-full h-full object-cover"
                     loading="lazy"
+                    onError={(e) => {
+                      console.error(`Failed to load thumbnail for page ${index + 1}`)
+                      e.currentTarget.src = '/placeholder-page.png'
+                    }}
                   />
                   <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs py-1 text-center">
                     {index + 1}
