@@ -181,6 +181,11 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
           drawShadow={true}
           startZIndex={0}
           autoSize={true}
+          clickEventForward={true}
+          useMouseEvents={true}
+          swipeDistance={30}
+          showPageCorners={true}
+          disableFlipByClick={false}
         >
           {imageUrls.map((imageUrl, index) => (
             <Page
