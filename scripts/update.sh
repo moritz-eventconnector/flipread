@@ -62,7 +62,7 @@ fi
 # Recreate local nginx config if domain was extracted but file doesn't exist
 if [ ! -z "$DOMAIN" ] && [ ! -f infra/nginx/conf.d/flipread.local.conf ]; then
     echo "Erstelle lokale Nginx-Konfiguration neu..."
-    sed "s/flipread.de/$DOMAIN/g; s/www.flipread.de/www.$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
+    sed "s/flipread.de/$DOMAIN/g" infra/nginx/conf.d/flipread.conf > infra/nginx/conf.d/flipread.local.conf
     # Update SSL paths
     sed -i "s|/etc/letsencrypt/live/flipread.de|/etc/letsencrypt/live/$DOMAIN|g" infra/nginx/conf.d/flipread.local.conf
     echo "✅ Lokale Nginx-Konfiguration neu erstellt"
