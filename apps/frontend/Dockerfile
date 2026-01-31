@@ -26,11 +26,21 @@ COPY . .
 # This allows the standalone HTML viewer to load the library locally (no external CDN)
 # The prebuild script will handle this, but we also do it here as fallback
 RUN mkdir -p ./public/lib && \
-    (cp -r ./node_modules/page-flip/dist/* ./public/lib/ 2>/dev/null || \
-     find ./node_modules -name "page-flip" -type d 2>/dev/null | head -1 | xargs -I {} cp -r {}/dist/* ./public/lib/ 2>/dev/null || \
-     echo "Warning: page-flip files not found")
+    if [ -d ./node_modules/page-flip/dist ]; then \
+      if [ -d ./node_modules/page-flip/dist/js ]; then \
+        cp -r ./node_modules/page-flip/dist/js/* ./public/lib/; \
+      else \
+        cp -r ./node_modules/page-flip/dist/* ./public/lib/; \
+      fi; \
+      echo "Copied page-flip files to public/lib"; \
+      ls -la ./public/lib/; \
+    else \
+      echo "ERROR: page-flip dist directory not found in node_modules"; \
+      find ./node_modules -name "page-flip" -type d 2>/dev/null | head -5; \
+      exit 1; \
+    fi
 RUN npm run build
-RUN ls -la ./public/lib/ || echo "public/lib directory check"
+RUN echo "Checking public/lib after build:" && ls -la ./public/lib/ || echo "public/lib directory check failed"
 
 # Production image, copy all the files and run next
 FROM base AS runner

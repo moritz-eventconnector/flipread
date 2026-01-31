@@ -8,6 +8,15 @@ import toast from 'react-hot-toast'
 declare global {
   interface Window {
     StPageFlip: any
+    St?: {
+      PageFlip?: any
+    }
+    PageFlip?: any
+    pageFlip?: any
+    stPageFlip?: any
+    module?: {
+      exports?: any
+    }
   }
 }
 
@@ -111,12 +120,13 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     console.log('Loading StPageFlip library...')
     
     // Load from public/lib (local only, no CDN)
+    // Try page-flip.browser.js first as it's the browser-compatible version
     const possibleSources = [
       '/lib/page-flip.browser.js',
+      '/lib/js/page-flip.browser.js',
       '/lib/st-pageflip.min.js',
       '/lib/page-flip.js',
       '/lib/page-flip.browser.min.js',
-      '/lib/js/page-flip.browser.js',
       '/lib/js/st-pageflip.min.js'
     ]
     
@@ -145,16 +155,92 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       currentScript.onload = () => {
         console.log(`Script loaded: ${src}`)
         // Wait a bit for StPageFlip to be available
+        // The page-flip library may export in different ways
         setTimeout(() => {
-          if (window.StPageFlip) {
-            console.log('StPageFlip is now available')
+          // Check various possible global names and export patterns
+          let pageFlipClass: any = null
+          
+          // Try direct window properties (most common)
+          // The page-flip library exports as St.PageFlip
+          if (window.St && (window.St as any).PageFlip) {
+            pageFlipClass = (window.St as any).PageFlip
+            console.log('Found St.PageFlip on window')
+          } else if (window.StPageFlip) {
+            pageFlipClass = window.StPageFlip
+            console.log('Found StPageFlip directly on window')
+          } else if ((window as any).PageFlip) {
+            pageFlipClass = (window as any).PageFlip
+            console.log('Found PageFlip on window')
+          } else if ((window as any).pageFlip) {
+            pageFlipClass = (window as any).pageFlip
+            console.log('Found pageFlip on window')
+          } else if ((window as any).stPageFlip) {
+            pageFlipClass = (window as any).stPageFlip
+            console.log('Found stPageFlip on window')
+          }
+          
+          // Try checking the script's global scope (some UMD modules attach to globalThis)
+          if (!pageFlipClass && typeof (globalThis as any).StPageFlip !== 'undefined') {
+            pageFlipClass = (globalThis as any).StPageFlip
+            console.log('Found StPageFlip on globalThis')
+          }
+          
+          // Try UMD/CommonJS exports (if library uses module.exports)
+          if (!pageFlipClass && typeof (window as any).module !== 'undefined' && (window as any).module.exports) {
+            const moduleExports = (window as any).module.exports
+            if (moduleExports && (moduleExports.StPageFlip || moduleExports.default)) {
+              pageFlipClass = moduleExports.StPageFlip || moduleExports.default
+              console.log('Found StPageFlip in module.exports')
+            }
+          }
+          
+          // Try checking if it's exported via a factory function or constructor
+          if (!pageFlipClass && typeof (window as any).StPageFlip === 'function') {
+            pageFlipClass = (window as any).StPageFlip
+            console.log('Found StPageFlip as function')
+          }
+          
+          if (pageFlipClass) {
+            // Store it as StPageFlip for consistency (so we can use window.StPageFlip everywhere)
+            window.StPageFlip = pageFlipClass
+            console.log('StPageFlip is now available (found as:', pageFlipClass.name || 'unknown', ')')
             setIsLoading(false)
           } else {
-            console.warn(`StPageFlip not available after loading ${src}, trying next...`)
+            // Debug: log what's actually available on window
+            console.error(`StPageFlip not available after loading ${src}`)
+            const relevantKeys = Object.keys(window).filter(k => 
+              k.toLowerCase().includes('page') || 
+              k.toLowerCase().includes('flip') ||
+              k.toLowerCase().includes('stpage')
+            )
+            console.warn('Available window properties:', relevantKeys.length > 0 ? relevantKeys : 'none found')
+            console.warn('Checking window object:', typeof window, 'StPageFlip type:', typeof (window as any).StPageFlip)
+            console.warn('Trying to fetch script content to debug...')
+            
+            // Try to fetch the script content to see what it exports
+            fetch(src)
+              .then(res => res.text())
+              .then(text => {
+                // Look for export patterns in the first 500 chars
+                const preview = text.substring(0, 500)
+                console.warn('Script content preview:', preview)
+                // Look for common export patterns
+                if (preview.includes('StPageFlip')) {
+                  console.warn('Script contains "StPageFlip" string')
+                }
+                if (preview.includes('window.StPageFlip')) {
+                  console.warn('Script contains "window.StPageFlip" assignment')
+                }
+                if (preview.includes('global.StPageFlip')) {
+                  console.warn('Script contains "global.StPageFlip" assignment')
+                }
+              })
+              .catch(err => console.warn('Could not fetch script for debugging:', err))
+            
             currentIndex++
             tryLoad()
           }
-        }, 100)
+        }, 500) // Increased timeout to give library more time to initialize
       }
       currentScript.onerror = (error) => {
         console.warn(`Failed to load ${src}:`, error)
