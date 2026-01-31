@@ -657,8 +657,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         <div className="flipbook-wrapper w-full h-full flex justify-center items-center overflow-hidden">
           <HTMLFlipBook
             ref={flipBookRef}
-            width={0}
-            height={0}
+            width={800}
+            height={1000}
             size="stretch"
             minWidth={400}
             maxWidth={1200}
