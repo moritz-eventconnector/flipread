@@ -1,0 +1,3 @@
+default_app_config = 'admin_custom.apps.AdminCustomConfig'
+
+
