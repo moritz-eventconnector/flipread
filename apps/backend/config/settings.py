@@ -1,0 +1,323 @@
+"""
+Django settings for flipread project.
+"""
+import os
+from pathlib import Path
+import environ
+
+env = environ.Env(
+    DEBUG=(bool, False)
+)
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Read .env file
+environ.Env.read_env(os.path.join(BASE_DIR.parent.parent, '.env'))
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = env('SECRET_KEY')
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = env('DEBUG', default=False)
+
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1', 'backend'])
+
+# Application definition
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    'django_filters',
+    'storages',  # django-storages for S3
+    'accounts',
+    'projects',
+    'billing',
+    'admin_custom',
+]
+
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+ROOT_URLCONF = 'config.urls'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [BASE_DIR / 'templates'],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = 'config.wsgi.application'
+
+# Database
+DATABASES = {
+    'default': env.db('DATABASE_URL', default='postgresql://flipread:flipread@postgres:5432/flipread')
+}
+
+# Password validation
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
+
+# Internationalization
+LANGUAGE_CODE = 'de-de'
+TIME_ZONE = 'Europe/Berlin'
+USE_I18N = True
+USE_TZ = True
+
+# S3-Compatible Storage Configuration (AWS S3, SafeS3, etc.)
+USE_S3_ENV = env.bool('USE_S3', default=True)
+AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')
+AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY', default='')
+AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME', default='')
+AWS_S3_REGION_NAME = env('AWS_S3_REGION_NAME', default='eu-central-1')
+AWS_S3_ENDPOINT_URL = env('AWS_S3_ENDPOINT_URL', default='')  # For S3-compatible services (e.g. SafeS3)
+AWS_S3_CUSTOM_DOMAIN = env('AWS_S3_CUSTOM_DOMAIN', default='')  # Optional: CDN domain
+
+# Only use S3 if all required credentials are provided
+# For SafeS3 or other S3-compatible services, AWS_S3_ENDPOINT_URL is also required
+USE_S3 = (
+    USE_S3_ENV and
+    AWS_STORAGE_BUCKET_NAME and AWS_STORAGE_BUCKET_NAME.strip() and
+    AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID.strip() and
+    AWS_SECRET_ACCESS_KEY and AWS_SECRET_ACCESS_KEY.strip()
+)
+
+AWS_S3_OBJECT_PARAMETERS = {
+    'CacheControl': 'max-age=86400',
+}
+AWS_DEFAULT_ACL = 'public-read'
+AWS_S3_FILE_OVERWRITE = False
+AWS_QUERYSTRING_AUTH = False
+
+# Static files (CSS, JavaScript, Images)
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+if USE_S3:
+    STATICFILES_STORAGE = 'projects.storage.StaticFilesStorage'
+else:
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Media files
+if USE_S3:
+    DEFAULT_FILE_STORAGE = 'projects.storage.MediaStorage'
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
+    elif AWS_S3_ENDPOINT_URL and AWS_S3_ENDPOINT_URL.strip():
+        # S3-compatible service (e.g. SafeS3)
+        endpoint_host = AWS_S3_ENDPOINT_URL.strip().replace('https://', '').replace('http://', '').split('/')[0]
+        MEDIA_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/'
+    else:
+        # Standard AWS S3
+        MEDIA_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/'
+    MEDIA_ROOT = None
+else:
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'media'
+
+# Published flipbooks
+if USE_S3:
+    PUBLISHED_STORAGE = 'projects.storage.PublishedStorage'
+    if AWS_S3_CUSTOM_DOMAIN:
+        PUBLISHED_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
+    elif AWS_S3_ENDPOINT_URL and AWS_S3_ENDPOINT_URL.strip():
+        # S3-compatible service (e.g. SafeS3)
+        endpoint_host = AWS_S3_ENDPOINT_URL.strip().replace('https://', '').replace('http://', '').split('/')[0]
+        PUBLISHED_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/'
+    else:
+        # Standard AWS S3
+        PUBLISHED_URL = f'https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/'
+    PUBLISHED_ROOT = None
+else:
+    PUBLISHED_ROOT = BASE_DIR / 'published'
+    PUBLISHED_URL = None
+
+# Default primary key field type
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Custom User Model
+AUTH_USER_MODEL = 'accounts.User'
+
+# REST Framework
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ),
+}
+
+# JWT Settings
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
+
+# CORS
+# Get CORS origins from environment or use SITE_URL
+cors_origins = env.list('CORS_ALLOWED_ORIGINS', default=[])
+if not cors_origins:
+    # If not set, use SITE_URL
+    site_url = env('SITE_URL', default='https://flipread.de')
+    cors_origins = [site_url]
+    # Also add any domain from ALLOWED_HOSTS that starts with http
+    allowed_hosts = env.list('ALLOWED_HOSTS', default=[])
+    for host in allowed_hosts:
+        if host and not host.startswith('http') and '.' in host:
+            # Add both http and https versions
+            cors_origins.append(f'https://{host}')
+            cors_origins.append(f'http://{host}')
+
+CORS_ALLOWED_ORIGINS = cors_origins
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Email
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = env('EMAIL_HOST', default='')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+# Port 465 uses SSL, port 587 uses TLS
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+EMAIL_USE_SSL = env.bool('EMAIL_USE_SSL', default=False)
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@flipread.de')
+
+# Email Verification
+ENABLE_EMAIL_VERIFICATION = env.bool('ENABLE_EMAIL_VERIFICATION', default=False)
+
+# 2FA per Email
+ENABLE_2FA_EMAIL = env.bool('ENABLE_2FA_EMAIL', default=False)
+
+# Stripe
+STRIPE_SECRET_KEY = env('STRIPE_SECRET_KEY', default='')
+STRIPE_PUBLISHABLE_KEY = env('STRIPE_PUBLISHABLE_KEY', default='')
+STRIPE_WEBHOOK_SECRET = env('STRIPE_WEBHOOK_SECRET', default='')
+STRIPE_DOWNLOAD_PRICE_ID = env('STRIPE_DOWNLOAD_PRICE_ID', default='')
+STRIPE_HOSTING_PRICE_ID = env('STRIPE_HOSTING_PRICE_ID', default='')
+
+# Site URL
+SITE_URL = env('SITE_URL', default='https://flipread.de')
+
+# Security settings for reverse proxy (Nginx)
+# Tell Django to trust the X-Forwarded-Proto header from Nginx
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_TLS = not DEBUG  # Use HTTPS in production
+
+# Celery
+CELERY_BROKER_URL = env('CELERY_BROKER_URL', default='redis://redis:6379/0')
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# File Upload
+FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100MB
+
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'accounts': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'projects': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'billing': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+    },
+}  # 10MB
+

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /api/
+Disallow: /admin/
+
+Sitemap: https://flipread.de/sitemap.xml
+
+
