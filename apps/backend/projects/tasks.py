@@ -27,14 +27,11 @@ def process_pdf_task(project_id):
         os.makedirs(pages_dir, exist_ok=True)
         
         # Convert PDF to images using pdftoppm
-        if settings.USE_S3:
-            # For S3, download PDF to temp file first
-            pdf_content = project.pdf_file.read()
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_pdf:
-                tmp_pdf.write(pdf_content)
-                pdf_path = tmp_pdf.name
-        else:
-            pdf_path = project.pdf_file.path
+        # Always use S3-compatible method (read from storage)
+        pdf_content = project.pdf_file.read()
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_pdf:
+            tmp_pdf.write(pdf_content)
+            pdf_path = tmp_pdf.name
         
         output_prefix = os.path.join(pages_dir, 'pdf-page')
         
@@ -45,8 +42,8 @@ def process_pdf_task(project_id):
             text=True
         )
         
-        # Clean up temp PDF file if we created one
-        if settings.USE_S3 and os.path.exists(pdf_path):
+        # Clean up temp PDF file
+        if os.path.exists(pdf_path):
             try:
                 os.unlink(pdf_path)
             except:
@@ -88,31 +85,17 @@ def process_pdf_task(project_id):
             
             if is_cover:
                 # Cover is always one page, even if landscape
-                # Upload as single page
-                image_file_path = f'projects/{project.user.id}/{project.id}/pages/page-{flipbook_page_number:03d}.jpg'
-                if settings.USE_S3:
-                    with open(page_path, 'rb') as f:
-                        file_content = f.read()
-                        project_page = ProjectPage(
-                            project=project,
-                            page_number=flipbook_page_number,
-                            width=width,
-                            height=height
-                        )
-                        project_page.image_file.save(f'page-{flipbook_page_number:03d}.jpg', ContentFile(file_content), save=False)
-                        project_page.save()
-                else:
-                    # For local storage, copy to new filename
-                    new_page_path = os.path.join(pages_dir, f'page-{flipbook_page_number:03d}.jpg')
-                    import shutil
-                    shutil.copy2(page_path, new_page_path)
-                    project_page = ProjectPage.objects.create(
+                # Upload as single page (always use S3-compatible storage)
+                with open(page_path, 'rb') as f:
+                    file_content = f.read()
+                    project_page = ProjectPage(
                         project=project,
                         page_number=flipbook_page_number,
-                        image_file=image_file_path,
                         width=width,
                         height=height
                     )
+                    project_page.image_file.save(f'page-{flipbook_page_number:03d}.jpg', ContentFile(file_content), save=False)
+                    project_page.save()
                 
                 pages_data.append({
                     'page_number': flipbook_page_number,
@@ -140,29 +123,19 @@ def process_pdf_task(project_id):
                     right_path = os.path.join(pages_dir, right_filename)
                     right_half.save(right_path, 'JPEG', quality=95)
                 
-                # Upload left half
+                # Upload left half (always use S3-compatible storage)
                 left_width = width // 2
                 left_height = height
-                image_file_path_left = f'projects/{project.user.id}/{project.id}/pages/{left_filename}'
-                if settings.USE_S3:
-                    with open(left_path, 'rb') as f:
-                        file_content = f.read()
-                        project_page = ProjectPage(
-                            project=project,
-                            page_number=flipbook_page_number,
-                            width=left_width,
-                            height=left_height
-                        )
-                        project_page.image_file.save(left_filename, ContentFile(file_content), save=False)
-                        project_page.save()
-                else:
-                    project_page = ProjectPage.objects.create(
+                with open(left_path, 'rb') as f:
+                    file_content = f.read()
+                    project_page = ProjectPage(
                         project=project,
                         page_number=flipbook_page_number,
-                        image_file=image_file_path_left,
                         width=left_width,
                         height=left_height
                     )
+                    project_page.image_file.save(left_filename, ContentFile(file_content), save=False)
+                    project_page.save()
                 
                 pages_data.append({
                     'page_number': flipbook_page_number,
@@ -172,29 +145,19 @@ def process_pdf_task(project_id):
                 })
                 flipbook_page_number += 1
                 
-                # Upload right half
+                # Upload right half (always use S3-compatible storage)
                 right_width = width - (width // 2)
                 right_height = height
-                image_file_path_right = f'projects/{project.user.id}/{project.id}/pages/{right_filename}'
-                if settings.USE_S3:
-                    with open(right_path, 'rb') as f:
-                        file_content = f.read()
-                        project_page = ProjectPage(
-                            project=project,
-                            page_number=flipbook_page_number,
-                            width=right_width,
-                            height=right_height
-                        )
-                        project_page.image_file.save(right_filename, ContentFile(file_content), save=False)
-                        project_page.save()
-                else:
-                    project_page = ProjectPage.objects.create(
+                with open(right_path, 'rb') as f:
+                    file_content = f.read()
+                    project_page = ProjectPage(
                         project=project,
                         page_number=flipbook_page_number,
-                        image_file=image_file_path_right,
                         width=right_width,
                         height=right_height
                     )
+                    project_page.image_file.save(right_filename, ContentFile(file_content), save=False)
+                    project_page.save()
                 
                 pages_data.append({
                     'page_number': flipbook_page_number,
@@ -205,31 +168,17 @@ def process_pdf_task(project_id):
                 flipbook_page_number += 1
                 
             else:
-                # Portrait page - use as is
-                image_file_path = f'projects/{project.user.id}/{project.id}/pages/page-{flipbook_page_number:03d}.jpg'
-                if settings.USE_S3:
-                    with open(page_path, 'rb') as f:
-                        file_content = f.read()
-                        project_page = ProjectPage(
-                            project=project,
-                            page_number=flipbook_page_number,
-                            width=width,
-                            height=height
-                        )
-                        project_page.image_file.save(f'page-{flipbook_page_number:03d}.jpg', ContentFile(file_content), save=False)
-                        project_page.save()
-                else:
-                    # For local storage, copy to new filename
-                    new_page_path = os.path.join(pages_dir, f'page-{flipbook_page_number:03d}.jpg')
-                    import shutil
-                    shutil.copy2(page_path, new_page_path)
-                    project_page = ProjectPage.objects.create(
+                # Portrait page - use as is (always use S3-compatible storage)
+                with open(page_path, 'rb') as f:
+                    file_content = f.read()
+                    project_page = ProjectPage(
                         project=project,
                         page_number=flipbook_page_number,
-                        image_file=image_file_path,
                         width=width,
                         height=height
                     )
+                    project_page.image_file.save(f'page-{flipbook_page_number:03d}.jpg', ContentFile(file_content), save=False)
+                    project_page.save()
                 
                 pages_data.append({
                     'page_number': flipbook_page_number,
@@ -287,35 +236,34 @@ def publish_flipbook_task(project_id):
         if not project.published_slug:
             project.save()  # This will generate published_slug
         
-        if settings.USE_S3:
-            # Publish to S3 with structure: customer-{user_id}-projekt-{published_slug}/...
-            from .storage import PublishedStorage
-            storage = PublishedStorage()
-            
-            # Base path for published files
-            base_path = f"customer-{project.user.id}-projekt-{project.published_slug}"
-            
-            # Upload pages
-            for page in project.pages.all().order_by('page_number'):
-                if page.image_file:
-                    # Read image file
-                    if hasattr(page.image_file, 'read'):
-                        image_content = page.image_file.read()
-                    else:
-                        # Local file path
-                        with open(page.image_file.path, 'rb') as f:
-                            image_content = f.read()
-                    
-                    # Upload to S3
-                    s3_path = f"{base_path}/pages/page-{page.page_number:03d}.jpg"
-                    storage.save(s3_path, ContentFile(image_content))
-            
-            # Upload pages.json
-            pages_json_content = json.dumps(project.pages_json, indent=2).encode('utf-8')
-            storage.save(f"{base_path}/pages.json", ContentFile(pages_json_content))
-            
-            # Create and upload index.html
-            index_html = f"""<!DOCTYPE html>
+        # Always publish to S3
+        from .storage import PublishedStorage
+        storage = PublishedStorage()
+        
+        # Base path for published files
+        base_path = f"customer-{project.user.id}-projekt-{project.published_slug}"
+        
+        # Upload pages
+        for page in project.pages.all().order_by('page_number'):
+            if page.image_file:
+                # Read image file (always use S3-compatible method)
+                image_content = page.image_file.read()
+                
+                # Upload to S3
+                s3_path = f"{base_path}/pages/page-{page.page_number:03d}.jpg"
+                storage.save(s3_path, ContentFile(image_content))
+        
+        # Upload pages.json
+        pages_json_content = json.dumps(project.pages_json, indent=2).encode('utf-8')
+        storage.save(f"{base_path}/pages.json", ContentFile(pages_json_content))
+        
+        # Create and upload index.html
+        logo_html = ''
+        if project.published_logo:
+            logo_url = project.published_logo.url if hasattr(project.published_logo, 'url') else f'/media/{project.published_logo}'
+            logo_html = f'<div id="logo-container" style="position: fixed; top: 20px; left: 20px; z-index: 1000;"><img src="{logo_url}" alt="Logo" style="max-height: 60px; max-width: 200px; object-fit: contain;"></div>'
+        
+        index_html = f"""<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
@@ -324,74 +272,24 @@ def publish_flipbook_task(project_id):
     <link rel="stylesheet" href="app.css">
 </head>
 <body>
+    {logo_html}
     <div id="flipbook-container"></div>
     <div id="page-info" class="page-info"></div>
     <script src="/lib/page-flip.browser.js"></script>
     <script src="app.js"></script>
 </body>
 </html>"""
-            storage.save(f"{base_path}/index.html", ContentFile(index_html.encode('utf-8')))
-            
-            # Upload app.js and app.css from viewer source if exists
-            viewer_source = os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'viewer')
-            for file in ['app.js', 'app.css']:
-                src = os.path.join(viewer_source, file)
-                if os.path.exists(src):
-                    with open(src, 'rb') as f:
-                        storage.save(f"{base_path}/{file}", ContentFile(f.read()))
-            
-            return f"Published project {project.id} to S3: {project.published_slug}"
-        else:
-            # Publish to local filesystem
-            published_dir = project.published_directory
-            os.makedirs(published_dir, exist_ok=True)
-            
-            # Copy pages
-            pages_dir = os.path.join(published_dir, 'pages')
-            os.makedirs(pages_dir, exist_ok=True)
-            
-            for page in project.pages.all().order_by('page_number'):
-                if page.image_file and os.path.exists(page.image_file.path):
-                    dest_path = os.path.join(pages_dir, f"page-{page.page_number:03d}.jpg")
-                    import shutil
-                    shutil.copy2(page.image_file.path, dest_path)
-            
-            # Create pages.json
-            pages_json_path = os.path.join(published_dir, 'pages.json')
-            with open(pages_json_path, 'w') as f:
-                json.dump(project.pages_json, f, indent=2)
-            
-            # Create index.html
-            index_html = f"""<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{project.title} - Flipbook</title>
-    <link rel="stylesheet" href="app.css">
-</head>
-<body>
-    <div id="flipbook-container"></div>
-    <div id="page-info" class="page-info"></div>
-    <script src="/lib/page-flip.browser.js"></script>
-    <script src="app.js"></script>
-</body>
-</html>"""
-            
-            with open(os.path.join(published_dir, 'index.html'), 'w', encoding='utf-8') as f:
-                f.write(index_html)
-            
-            # Copy app.js and app.css from viewer source if exists
-            viewer_source = os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'viewer')
-            if os.path.exists(viewer_source):
-                import shutil
-                for file in ['app.js', 'app.css']:
-                    src = os.path.join(viewer_source, file)
-                    dst = os.path.join(published_dir, file)
-                    if os.path.exists(src):
-                        shutil.copy2(src, dst)
-            
-            return f"Published project {project.id} to {published_dir}"
+        storage.save(f"{base_path}/index.html", ContentFile(index_html.encode('utf-8')))
+        
+        # Upload app.js and app.css from viewer source if exists
+        viewer_source = os.path.join(settings.BASE_DIR.parent.parent, 'apps', 'frontend', 'public', 'viewer')
+        for file in ['app.js', 'app.css']:
+            src = os.path.join(viewer_source, file)
+            if os.path.exists(src):
+                with open(src, 'rb') as f:
+                    storage.save(f"{base_path}/{file}", ContentFile(f.read()))
+        
+        return f"Published project {project.id} to S3: {project.published_slug}"
     
     except Project.DoesNotExist:
         return f"Project {project_id} not found"

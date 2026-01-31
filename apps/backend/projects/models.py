@@ -65,6 +65,7 @@ class Project(models.Model):
     is_published = models.BooleanField(default=False)
     published_at = models.DateTimeField(null=True, blank=True)
     published_slug = models.SlugField(max_length=255, unique=True, null=True, blank=True, db_index=True)
+    published_logo = models.ImageField(upload_to=project_upload_path, null=True, blank=True, help_text='Logo für veröffentlichtes Flipbook')
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

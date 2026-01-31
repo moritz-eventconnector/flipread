@@ -14,70 +14,14 @@ from django.views.decorators.http import require_http_methods
 from accounts.models import User
 from projects.models import Project
 from .models import StripeCustomer, Payment, Subscription, WebhookEvent
-
-logger = logging.getLogger(__name__)
-
-# CRITICAL: Import stripe ONLY after we set the API key
-# The stripe module's internal structure breaks if modules are imported while api_key is None
+from .stripe_init import (
+    ensure_stripe_api_key,
+    get_stripe_checkout_session,
+    get_stripe_billing_portal_session
+)
 import stripe
 
-# CRITICAL: Set stripe.api_key IMMEDIATELY after importing stripe
-# This must happen before any Stripe submodules are imported
-# The stripe module's internal structure breaks if submodules are imported while api_key is None
-# Check if we have a valid Stripe secret key and set it immediately
-if settings.STRIPE_SECRET_KEY and len(settings.STRIPE_SECRET_KEY) > 10 and settings.STRIPE_SECRET_KEY.startswith('sk_'):
-    stripe.api_key = settings.STRIPE_SECRET_KEY
-    logger.info("Stripe API key set on module import")
-else:
-    logger.warning("STRIPE_SECRET_KEY not configured or invalid - Stripe features will not work")
-    # Set a dummy key to prevent module breakage, but ensure_stripe_api_key will validate it
-    # Actually, don't set a dummy key - it will cause issues. Just leave it None and handle in ensure_stripe_api_key
-
-# Helper function to safely set Stripe API key
-def ensure_stripe_api_key():
-    """Ensure stripe.api_key is set if a valid key is available"""
-    # Check if we have a valid Stripe secret key
-    if not settings.STRIPE_SECRET_KEY:
-        logger.warning("STRIPE_SECRET_KEY is not set")
-        return False
-    
-    # Check if key is long enough (valid Stripe keys are much longer)
-    if len(settings.STRIPE_SECRET_KEY) <= 10:
-        logger.warning(f"STRIPE_SECRET_KEY is too short ({len(settings.STRIPE_SECRET_KEY)} chars) - likely invalid")
-        return False
-    
-    # Check if key starts with sk_ (Stripe secret keys start with sk_test_ or sk_live_)
-    if not settings.STRIPE_SECRET_KEY.startswith('sk_'):
-        logger.warning(f"STRIPE_SECRET_KEY does not start with 'sk_' - likely invalid")
-        return False
-    
-    # CRITICAL: Set the API key
-    # This must be done BEFORE any Stripe submodules are imported
-    stripe.api_key = settings.STRIPE_SECRET_KEY
-    logger.info("Stripe API key set/updated")
-    
-    # Verify that stripe.api_key is set
-    if not stripe.api_key:
-        logger.error("stripe.api_key is None after setting - this should not happen!")
-        return False
-    
-    # Try to verify that Stripe modules can be imported now
-    # We don't import them here to avoid breaking the module structure
-    # They will be imported on-demand in the view functions
-    try:
-        # Just verify that stripe module is accessible
-        if not hasattr(stripe, 'api_key'):
-            logger.error("stripe module does not have api_key attribute")
-            return False
-        logger.debug("Stripe API key verified")
-    except Exception as e:
-        logger.error(f"Error verifying Stripe module: {e}", exc_info=True)
-        return False
-    
-    return True
-
-# Initialize on module load
-ensure_stripe_api_key()
+logger = logging.getLogger(__name__)
 
 
 def get_or_create_stripe_customer(user):
@@ -113,6 +57,8 @@ def get_or_create_stripe_customer(user):
             # Create a real Stripe customer
             try:
                 logger.info(f"Creating real Stripe customer for user {user.email} (replacing mock {old_customer_id})")
+                if not ensure_stripe_api_key():
+                    raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
                 customer = stripe.Customer.create(
                     email=user.email,
                     metadata={'user_id': user.id}
@@ -136,6 +82,8 @@ def get_or_create_stripe_customer(user):
     except StripeCustomer.DoesNotExist:
         try:
             logger.info(f"Creating Stripe customer for user {user.email}")
+            if not ensure_stripe_api_key():
+                raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
             customer = stripe.Customer.create(
                 email=user.email,
                 metadata={'user_id': user.id}
@@ -255,9 +203,9 @@ def checkout_download(request):
         )
     
     # Create checkout session
-    # Use direct import to avoid AttributeError
+    # Use safe import helper to avoid AttributeError
     try:
-        from stripe.checkout import Session as CheckoutSession
+        CheckoutSession = get_stripe_checkout_session()
         checkout_session = CheckoutSession.create(
             customer=stripe_customer.stripe_customer_id,
             payment_method_types=['card'],
@@ -273,6 +221,12 @@ def checkout_download(request):
                 'project_id': project.id,
                 'payment_type': 'download'
             }
+        )
+    except ValueError as e:
+        logger.error(f"Stripe initialization error: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to create payment session: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     except stripe.error.StripeError as e:
         logger.error(f"Stripe API Error creating checkout session for download: {e}", exc_info=True)
@@ -410,9 +364,9 @@ def checkout_hosting(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    # Create checkout session using direct import to avoid AttributeError
+    # Create checkout session using safe import helper
     try:
-        from stripe.checkout import Session as CheckoutSession
+        CheckoutSession = get_stripe_checkout_session()
         checkout_session = CheckoutSession.create(
             customer=stripe_customer.stripe_customer_id,
             payment_method_types=['card'],
@@ -428,10 +382,10 @@ def checkout_hosting(request):
                 'payment_type': 'hosting'
             }
         )
-    except (ImportError, AttributeError) as e:
-        logger.error(f"Cannot import or use stripe.checkout.Session: {e}", exc_info=True)
+    except ValueError as e:
+        logger.error(f"Stripe initialization error: {e}", exc_info=True)
         return Response(
-            {'error': 'Payment system error. Stripe module not initialized. Please contact support.'},
+            {'error': f'Failed to create payment session: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     except stripe.error.StripeError as e:
@@ -497,11 +451,17 @@ def billing_portal(request):
         )
     
     try:
-        # Use direct import to avoid AttributeError
-        from stripe.billing_portal import Session as BillingPortalSession
+        # Use safe import helper to avoid AttributeError
+        BillingPortalSession = get_stripe_billing_portal_session()
         portal_session = BillingPortalSession.create(
             customer=stripe_customer.stripe_customer_id,
             return_url=f"{settings.SITE_URL}/app/dashboard",
+        )
+    except ValueError as e:
+        logger.error(f"Stripe initialization error: {e}", exc_info=True)
+        return Response(
+            {'error': f'Failed to access billing portal: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     except stripe.error.StripeError as e:
         logger.error(f"Stripe API error creating billing portal session: {e}", exc_info=True)

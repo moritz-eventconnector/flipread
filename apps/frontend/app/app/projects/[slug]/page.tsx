@@ -162,6 +162,8 @@ export default function ProjectDetailPage() {
   const [showPublishModal, setShowPublishModal] = useState(false)
   const [publishSlug, setPublishSlug] = useState('')
   const [publishing, setPublishing] = useState(false)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
 
   useEffect(() => {
     loadProject()
@@ -201,9 +203,31 @@ export default function ProjectDetailPage() {
       // User has hosting, show modal for slug input
       setShowPublishModal(true)
       setPublishSlug('')
+      setLogoFile(null)
+      setLogoPreview(null)
     } else {
       // User doesn't have hosting, redirect to hosting page
       router.push('/app/billing/hosting')
+    }
+  }
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Logo darf maximal 5 MB groß sein')
+        return
+      }
+      if (!file.type.startsWith('image/')) {
+        toast.error('Bitte wählen Sie eine Bilddatei')
+        return
+      }
+      setLogoFile(file)
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setLogoPreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
     }
   }
 
@@ -227,12 +251,22 @@ export default function ProjectDetailPage() {
 
     setPublishing(true)
     try {
-      await api.post(`/projects/${project!.slug}/publish/`, {
-        published_slug: publishSlug.trim()
+      const formData = new FormData()
+      formData.append('published_slug', publishSlug.trim())
+      if (logoFile) {
+        formData.append('published_logo', logoFile)
+      }
+      
+      await api.post(`/projects/${project!.slug}/publish/`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       })
       toast.success('Projekt wird veröffentlicht...')
       setShowPublishModal(false)
       setPublishSlug('')
+      setLogoFile(null)
+      setLogoPreview(null)
       // Reload project after a short delay
       setTimeout(() => {
         loadProject()
@@ -422,6 +456,33 @@ export default function ProjectDetailPage() {
                 Nur Kleinbuchstaben, Zahlen und Bindestriche erlaubt (mindestens 3 Zeichen)
               </p>
             </div>
+            <div className="mb-4">
+              <label htmlFor="publish_logo" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Logo (optional)
+              </label>
+              <input
+                id="publish_logo"
+                type="file"
+                accept="image/*"
+                onChange={handleLogoChange}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                disabled={publishing}
+              />
+              {logoPreview && (
+                <div className="mt-2">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Vorschau:</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={logoPreview}
+                    alt="Logo Vorschau"
+                    className="max-h-20 max-w-32 object-contain border border-gray-300 dark:border-gray-600 rounded"
+                  />
+                </div>
+              )}
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Logo wird oben links im veröffentlichten Flipbook angezeigt (max. 5 MB)
+              </p>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handlePublish}
@@ -434,6 +495,8 @@ export default function ProjectDetailPage() {
                 onClick={() => {
                   setShowPublishModal(false)
                   setPublishSlug('')
+                  setLogoFile(null)
+                  setLogoPreview(null)
                 }}
                 disabled={publishing}
                 className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"

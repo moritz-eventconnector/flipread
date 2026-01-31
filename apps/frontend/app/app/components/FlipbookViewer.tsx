@@ -368,7 +368,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     // Handle page flip event
     flipbook.on('flip', (e: any) => {
-      const newPage = e.data
+      // Use getCurrentPageIndex() to get the actual page number (not spread number)
+      const newPage = flipbook.getCurrentPageIndex ? flipbook.getCurrentPageIndex() : e.data
       setCurrentPage(newPage)
       
       // Update URL
@@ -412,7 +413,14 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const goToPage = (pageIndex: number) => {
     if (pageIndex < 0 || pageIndex >= totalPages) return
     
-    if (flipbookRef.current && typeof flipbookRef.current.flip === 'function') {
+    if (flipbookRef.current && typeof flipbookRef.current.turnToPage === 'function') {
+      // Use turnToPage for direct navigation (more reliable than flip)
+      flipbookRef.current.turnToPage(pageIndex)
+      setCurrentPage(pageIndex)
+      const url = new URL(window.location.href)
+      url.searchParams.set('page', (pageIndex + 1).toString())
+      window.history.pushState({}, '', url.toString())
+    } else if (flipbookRef.current && typeof flipbookRef.current.flip === 'function') {
       flipbookRef.current.flip(pageIndex)
       setCurrentPage(pageIndex)
       const url = new URL(window.location.href)
@@ -460,7 +468,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const handleDownload = async () => {
     setDownloading(true)
     try {
-      const response = await api.get(`/projects/${project.slug}/download_pdf/`, {
+      // Always allow download from viewer (PDF only, no payment check)
+      const response = await api.get(`/projects/${project.slug}/download_pdf/?from_viewer=true`, {
         responseType: 'blob',
       })
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
@@ -625,7 +634,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   return (
     <>
       <div 
-        className="w-full h-screen flex flex-col bg-gray-50 relative"
+        className="w-full h-screen flex flex-col bg-gray-200 relative"
         style={{ 
           width: '100%', 
           height: '100vh', 

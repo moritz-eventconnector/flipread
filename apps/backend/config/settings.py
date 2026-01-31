@@ -102,7 +102,7 @@ USE_I18N = True
 USE_TZ = True
 
 # S3-Compatible Storage Configuration (AWS S3, SafeS3, etc.)
-USE_S3 = env.bool('USE_S3', default=False)
+USE_S3 = env.bool('USE_S3', default=True)
 AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')
 AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY', default='')
 AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME', default='')

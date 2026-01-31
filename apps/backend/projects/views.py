@@ -64,10 +64,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def download_pdf(self, request, slug=None):
-        """Download original PDF file (requires payment)"""
+        """Download original PDF file (requires payment, except from viewer)"""
         project = self.get_object()
         
-        logger.info(f"PDF download request for project {project.slug} by user {request.user.email}")
+        # Check if request is from viewer (always allow PDF download from viewer)
+        from_viewer = request.query_params.get('from_viewer', 'false').lower() == 'true'
+        
+        logger.info(f"PDF download request for project {project.slug} by user {request.user.email} (from_viewer={from_viewer})")
         
         if project.user != request.user and not request.user.is_admin:
             logger.warning(f"Permission denied: User {request.user.email} tried to download PDF for project {project.slug} owned by {project.user.email}")
@@ -76,7 +79,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        if not project.can_download():
+        # Skip payment check if request is from viewer
+        if not from_viewer and not project.can_download():
             logger.warning(f"PDF download not available for project {project.slug}: download_enabled={project.download_enabled}")
             return Response(
                 {'error': 'Download not available. Payment required.'},
@@ -92,32 +96,15 @@ class ProjectViewSet(viewsets.ModelViewSet):
         
         try:
             # Return PDF file directly
-            if settings.USE_S3:
-                # For S3, we need to read the file content
-                pdf_content = project.pdf_file.read()
-                response = FileResponse(
-                    io.BytesIO(pdf_content),
-                    as_attachment=True,
-                    filename=f"{project.slug}.pdf"
-                )
-                response['Content-Type'] = 'application/pdf'
-                return response
-            else:
-                # For local storage, use FileResponse directly
-                if os.path.exists(project.pdf_file.path):
-                    response = FileResponse(
-                        open(project.pdf_file.path, 'rb'),
-                        as_attachment=True,
-                        filename=f"{project.slug}.pdf"
-                    )
-                    response['Content-Type'] = 'application/pdf'
-                    return response
-                else:
-                    logger.error(f"PDF file not found at path: {project.pdf_file.path}")
-                    return Response(
-                        {'error': 'PDF file not found'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
+            # Always use S3-compatible method (read from storage)
+            pdf_content = project.pdf_file.read()
+            response = FileResponse(
+                io.BytesIO(pdf_content),
+                as_attachment=True,
+                filename=f"{project.slug}.pdf"
+            )
+            response['Content-Type'] = 'application/pdf'
+            return response
         except Exception as e:
             logger.error(f"Error serving PDF for project {project.slug}: {str(e)}", exc_info=True)
             return Response(
@@ -166,17 +153,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 for page in project.pages.all().order_by('page_number'):
                     if page.image_file:
                         try:
-                            if settings.USE_S3:
-                                # Read from S3
-                                image_content = page.image_file.read()
-                            else:
-                                # Read from local filesystem
-                                if os.path.exists(page.image_file.path):
-                                    with open(page.image_file.path, 'rb') as f:
-                                        image_content = f.read()
-                                else:
-                                    logger.warning(f"Page {page.page_number} file not found: {page.image_file.path}")
-                                    continue
+                            # Always use S3-compatible method (read from storage)
+                            image_content = page.image_file.read()
                             
                             arcname = f"pages/page-{page.page_number:03d}.jpg"
                             zipf.writestr(arcname, image_content)
@@ -574,6 +552,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
         
+        # Handle logo upload if provided
+        if 'published_logo' in request.FILES:
+            project.published_logo = request.FILES['published_logo']
+        
         # Get custom published_slug from request or generate one
         custom_slug = request.data.get('published_slug', '').strip()
         if custom_slug:
@@ -666,18 +648,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project.published_slug = new_slug
         project.save()
         
-        # Rename published directory if it exists (local only)
-        if not settings.USE_S3 and old_slug and project.published_directory:
-            old_dir = os.path.join(settings.PUBLISHED_ROOT, old_slug)
-            new_dir = os.path.join(settings.PUBLISHED_ROOT, new_slug)
-            if os.path.exists(old_dir) and not os.path.exists(new_dir):
-                os.rename(old_dir, new_dir)
-        elif settings.USE_S3 and old_slug:
-            # For S3, we need to copy files from old path to new path
-            from .storage import PublishedStorage
-            storage = PublishedStorage()
-            # Note: S3 doesn't support rename, so we'd need to copy and delete
-            # For now, we'll just republish with the new slug
+        # S3: Republish with new slug (S3 doesn't support rename)
+        if old_slug:
             from .tasks import publish_flipbook_task
             publish_flipbook_task.delay(project.id)
         
@@ -698,21 +670,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project.is_published = False
         project.save()
         
-        # Optionally delete published files
-        if settings.USE_S3:
-            # Delete from S3
-            from .storage import PublishedStorage
-            storage = PublishedStorage()
-            if project.published_slug:
-                # List and delete all files with this prefix
-                try:
-                    # S3 doesn't have a simple "delete directory" - we need to list and delete
-                    # For now, we'll just mark as unpublished. Files can be cleaned up later.
-                    pass
-                except Exception:
-                    pass
-        elif project.published_directory and os.path.exists(project.published_directory):
-            shutil.rmtree(project.published_directory)
+        # S3: Files are managed by storage backend, no local cleanup needed
+        # For now, we'll just mark as unpublished. Files can be cleaned up later if needed.
+        pass
         
         serializer = self.get_serializer(project)
         return Response(serializer.data)

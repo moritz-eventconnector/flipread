@@ -30,7 +30,7 @@ class ProjectSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'title', 'slug', 'description', 'status', 'error_message',
             'total_pages', 'pdf_url', 'pages', 'pages_json', 'can_download', 'can_publish',
-            'download_enabled', 'is_published', 'published_slug',
+            'download_enabled', 'is_published', 'published_slug', 'published_logo',
             'preview_url', 'public_url',
             'created_at', 'updated_at', 'processing_started_at', 'processing_completed_at'
         )
