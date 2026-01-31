@@ -107,19 +107,19 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       return
     }
 
-    // Load from public/lib or CDN via script tag
+    // Load from public/lib (local only, no CDN)
     const script = document.createElement('script')
     const possibleSources = [
       '/lib/page-flip.browser.js',
       '/lib/st-pageflip.min.js',
       '/lib/page-flip.js',
-      'https://cdn.jsdelivr.net/npm/page-flip@2.0.0/dist/page-flip.browser.js'
+      '/lib/page-flip.browser.min.js'
     ]
     
     let currentIndex = 0
     const tryLoad = () => {
       if (currentIndex >= possibleSources.length) {
-        console.error('Failed to load StPageFlip library from any source')
+        console.error('Failed to load StPageFlip library from local sources. Please ensure the library files are in /public/lib/')
         setIsLoading(false)
         return
       }
@@ -202,9 +202,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       return
     }
 
-    // Get StPageFlip from import, window, or require
-    const StPageFlipClass = StPageFlip || window.StPageFlip
-    if (!StPageFlipClass) {
+    // Get StPageFlip from window
+    if (!window.StPageFlip) {
       console.error('StPageFlip is not available')
       return
     }
@@ -282,7 +281,6 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     if (flipbookRef.current && typeof flipbookRef.current.flip === 'function') {
       flipbookRef.current.flip(currentPage)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
 
   // Apply zoom
