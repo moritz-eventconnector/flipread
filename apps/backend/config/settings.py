@@ -129,9 +129,9 @@ if USE_S3:
     DEFAULT_FILE_STORAGE = 'projects.storage.MediaStorage'
     if AWS_S3_CUSTOM_DOMAIN:
         MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
-    elif AWS_S3_ENDPOINT_URL:
+    elif AWS_S3_ENDPOINT_URL and AWS_S3_ENDPOINT_URL.strip():
         # S3-compatible service (e.g. SafeS3)
-        endpoint_host = AWS_S3_ENDPOINT_URL.replace('https://', '').replace('http://', '').split('/')[0]
+        endpoint_host = AWS_S3_ENDPOINT_URL.strip().replace('https://', '').replace('http://', '').split('/')[0]
         MEDIA_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/'
     else:
         # Standard AWS S3

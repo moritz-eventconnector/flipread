@@ -15,12 +15,19 @@ class StaticFilesStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
+    @property
+    def endpoint_url(self):
+        """Return endpoint URL only if it's valid, otherwise None"""
+        endpoint = settings.AWS_S3_ENDPOINT_URL
+        if endpoint and endpoint.strip():
+            return endpoint.strip()
+        return None
+    
     def __init__(self, *args, **kwargs):
+        # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
+        if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
+            del kwargs['endpoint_url']
         super().__init__(*args, **kwargs)
-        # Set endpoint URL for S3-compatible services (e.g. SafeS3)
-        # Only set if provided and not empty
-        if settings.AWS_S3_ENDPOINT_URL and settings.AWS_S3_ENDPOINT_URL.strip():
-            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL.strip()
 
 
 class MediaStorage(S3Boto3Storage):
@@ -33,12 +40,19 @@ class MediaStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
+    @property
+    def endpoint_url(self):
+        """Return endpoint URL only if it's valid, otherwise None"""
+        endpoint = settings.AWS_S3_ENDPOINT_URL
+        if endpoint and endpoint.strip():
+            return endpoint.strip()
+        return None
+    
     def __init__(self, *args, **kwargs):
+        # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
+        if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
+            del kwargs['endpoint_url']
         super().__init__(*args, **kwargs)
-        # Set endpoint URL for S3-compatible services (e.g. SafeS3)
-        # Only set if provided and not empty
-        if settings.AWS_S3_ENDPOINT_URL and settings.AWS_S3_ENDPOINT_URL.strip():
-            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL.strip()
 
 
 class PublishedStorage(S3Boto3Storage):
@@ -51,10 +65,17 @@ class PublishedStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
+    @property
+    def endpoint_url(self):
+        """Return endpoint URL only if it's valid, otherwise None"""
+        endpoint = settings.AWS_S3_ENDPOINT_URL
+        if endpoint and endpoint.strip():
+            return endpoint.strip()
+        return None
+    
     def __init__(self, *args, **kwargs):
+        # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
+        if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
+            del kwargs['endpoint_url']
         super().__init__(*args, **kwargs)
-        # Set endpoint URL for S3-compatible services (e.g. SafeS3)
-        # Only set if provided and not empty
-        if settings.AWS_S3_ENDPOINT_URL and settings.AWS_S3_ENDPOINT_URL.strip():
-            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL.strip()
 
