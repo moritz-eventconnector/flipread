@@ -362,17 +362,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     flipbookRef.current = flipbook
 
-    // Prepare pages data
-    const pages = project.pages_json.pages.map((page, index) => {
-      return {
-        src: imageUrls[index],
-        width: page.width,
-        height: page.height,
-      }
-    })
-
-    // Load pages
-    flipbook.loadPages(pages)
+    // Load pages using loadFromImages (correct API for page-flip library)
+    // The method expects an array of image URLs (strings)
+    flipbook.loadFromImages(imageUrls)
 
     // Handle page flip event
     flipbook.on('flip', (e: any) => {
@@ -385,6 +377,14 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       window.history.pushState({}, '', url.toString())
     })
 
+    // Handle init event (when flipbook is ready)
+    flipbook.on('init', () => {
+      console.log('Flipbook initialized')
+      if (currentPage > 0) {
+        flipbook.turnToPage(currentPage)
+      }
+    })
+
     // Cleanup
     return () => {
       if (flipbook && typeof flipbook.destroy === 'function') {
@@ -395,8 +395,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
   // Navigate to page when currentPage changes externally
   useEffect(() => {
-    if (flipbookRef.current && typeof flipbookRef.current.flip === 'function') {
-      flipbookRef.current.flip(currentPage)
+    if (flipbookRef.current && typeof flipbookRef.current.turnToPage === 'function') {
+      flipbookRef.current.turnToPage(currentPage)
     }
   }, [currentPage])
 
