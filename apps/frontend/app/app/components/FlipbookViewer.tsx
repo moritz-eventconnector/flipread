@@ -168,34 +168,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const pageHeight = firstPage?.height || 600
   const aspectRatio = pageWidth / pageHeight
   
-  // Calculate base dimensions dynamically based on viewport
-  // Ensure the flipbook fits within the viewport while maintaining aspect ratio
-  const calculateDimensions = () => {
-    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth - 80 : 1200
-    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight - 200 : 800
-    
-    // Calculate maximum dimensions that fit in viewport
-    const maxWidth = Math.min(1200, viewportWidth)
-    const maxHeight = Math.min(900, viewportHeight)
-    
-    // Calculate dimensions maintaining aspect ratio
-    let baseWidth = maxWidth
-    let baseHeight = Math.round(baseWidth / aspectRatio)
-    
-    // If height exceeds viewport, scale down
-    if (baseHeight > maxHeight) {
-      baseHeight = maxHeight
-      baseWidth = Math.round(baseHeight * aspectRatio)
-    }
-    
-    // Ensure minimum size
-    baseWidth = Math.max(400, baseWidth)
-    baseHeight = Math.max(300, baseHeight)
-    
-    return { baseWidth, baseHeight }
-  }
-  
-  const { baseWidth, baseHeight } = calculateDimensions()
+  // Einfache Start-Dimensionen - autoSize übernimmt die Skalierung
+  const baseWidth = 550
+  const baseHeight = 700
 
   const totalPages = project.pages_json?.total_pages || 0
 
@@ -623,9 +598,10 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         />
       )}
 
-      {/* Main Content Area */}
+      {/* Main Content Area - Container mit Abstand zum Header und zum Ende */}
       <div 
-        className="flex-1 flex items-center justify-center pb-24 px-4 overflow-hidden"
+        className="flex-1 flex items-center justify-center pt-4 pb-24 px-4 overflow-hidden"
+        style={{ marginTop: '64px' }} // Abstand zum Header (h-16 = 64px)
         onMouseMove={(e) => {
           if (magnifierActive && imageUrls[currentPage]) {
             // Find the actual page image element within the flipbook
@@ -681,8 +657,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         <div className="flipbook-wrapper w-full h-full flex justify-center items-center">
           <HTMLFlipBook
             ref={flipBookRef}
-            width={baseWidth}
-            height={baseHeight}
+            width={550}
+            height={700}
             size="stretch"
             minWidth={400}
             maxWidth={1200}
@@ -699,7 +675,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             startPage={currentPage}
             drawShadow={true}
             startZIndex={0}
-            autoSize={false}
+            autoSize={true}
             clickEventForward={true}
             useMouseEvents={!magnifierActive}
             swipeDistance={30}

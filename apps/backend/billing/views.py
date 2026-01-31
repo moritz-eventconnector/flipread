@@ -1,7 +1,6 @@
 """
 Stripe Billing Views
 """
-import stripe
 import logging
 from datetime import datetime
 from rest_framework import status, permissions
@@ -18,24 +17,21 @@ from .models import StripeCustomer, Payment, Subscription, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
-# CRITICAL: Initialize Stripe module immediately on import
-# Import checkout module explicitly to ensure it's loaded
-try:
-    from stripe import checkout
-    from stripe.checkout import Session as CheckoutSession
-    from stripe.billing_portal import Session as BillingPortalSession
-    STRIPE_MODULES_AVAILABLE = True
-except (ImportError, AttributeError) as e:
-    logger.warning(f"Stripe modules not available on import: {e}")
-    STRIPE_MODULES_AVAILABLE = False
-    checkout = None
-    CheckoutSession = None
-    BillingPortalSession = None
+# CRITICAL: Import stripe ONLY after we set the API key
+# The stripe module's internal structure breaks if modules are imported while api_key is None
+import stripe
 
-# Initialize Stripe - ALWAYS set the key if available
-# The api_key MUST be set before any Stripe API calls
-# Setting it to None breaks the stripe module's internal structure
-# NEVER set stripe.api_key to None - it breaks the module
+# CRITICAL: Set stripe.api_key IMMEDIATELY after importing stripe
+# This must happen before any Stripe submodules are imported
+# The stripe module's internal structure breaks if submodules are imported while api_key is None
+# Check if we have a valid Stripe secret key and set it immediately
+if settings.STRIPE_SECRET_KEY and len(settings.STRIPE_SECRET_KEY) > 10 and settings.STRIPE_SECRET_KEY.startswith('sk_'):
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    logger.info("Stripe API key set on module import")
+else:
+    logger.warning("STRIPE_SECRET_KEY not configured or invalid - Stripe features will not work")
+    # Set a dummy key to prevent module breakage, but ensure_stripe_api_key will validate it
+    # Actually, don't set a dummy key - it will cause issues. Just leave it None and handle in ensure_stripe_api_key
 
 # Helper function to safely set Stripe API key
 def ensure_stripe_api_key():
@@ -56,25 +52,26 @@ def ensure_stripe_api_key():
         return False
     
     # CRITICAL: Set the API key
+    # This must be done BEFORE any Stripe submodules are imported
     stripe.api_key = settings.STRIPE_SECRET_KEY
     logger.info("Stripe API key set/updated")
     
-    # Verify that we can import Stripe modules
-    # We use direct imports in the views, so we just verify the import works
-    try:
-        from stripe.checkout import Session as CheckoutSession
-        # Verify it's callable
-        if not callable(CheckoutSession.create):
-            logger.error("CheckoutSession.create is not callable")
-            return False
-        logger.debug("Stripe checkout module verified")
-    except (AttributeError, ImportError) as e:
-        logger.error(f"Stripe checkout module not available after setting api_key: {e}")
-        return False
-    
-    # Final verification
+    # Verify that stripe.api_key is set
     if not stripe.api_key:
         logger.error("stripe.api_key is None after setting - this should not happen!")
+        return False
+    
+    # Try to verify that Stripe modules can be imported now
+    # We don't import them here to avoid breaking the module structure
+    # They will be imported on-demand in the view functions
+    try:
+        # Just verify that stripe module is accessible
+        if not hasattr(stripe, 'api_key'):
+            logger.error("stripe module does not have api_key attribute")
+            return False
+        logger.debug("Stripe API key verified")
+    except Exception as e:
+        logger.error(f"Error verifying Stripe module: {e}", exc_info=True)
         return False
     
     return True
