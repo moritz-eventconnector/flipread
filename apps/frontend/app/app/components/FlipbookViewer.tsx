@@ -66,7 +66,7 @@ const Page = React.forwardRef<HTMLDivElement, {
       <div 
         ref={ref} 
         className="page" 
-        style={{ width: '100%', height: '100%', position: 'relative' }}
+        style={{ width: '100%', height: '100%', position: 'relative', margin: 0, padding: 0 }}
       >
         <div 
           ref={containerRef}
@@ -77,8 +77,9 @@ const Page = React.forwardRef<HTMLDivElement, {
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center', 
-            overflow: 'visible',
-            padding: '10px'
+            overflow: 'hidden',
+            padding: 0,
+            margin: 0
           }}
           onMouseMove={handleMouseMove}
         >
@@ -335,15 +336,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   }
 
   const handleDownload = async () => {
-    if (!project.can_download) {
-      // Redirect to download purchase page
-      window.location.href = `/app/projects/${project.slug}/download`
-      return
-    }
-
     setDownloading(true)
     try {
-      // Download the original PDF file
+      // Always download the original PDF file directly
       const response = await api.get(`/projects/${project.slug}/download_pdf/`, {
         responseType: 'blob',
       })
@@ -357,12 +352,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       window.URL.revokeObjectURL(url)
       toast.success('PDF-Download gestartet')
     } catch (error: any) {
-      if (error.response?.status === 402) {
-        // Payment required - redirect to purchase page
-        window.location.href = `/app/projects/${project.slug}/download`
-      } else {
-        toast.error(error.response?.data?.error || 'Fehler beim Download')
-      }
+      toast.error(error.response?.data?.error || 'Fehler beim Download')
     } finally {
       setDownloading(false)
     }
@@ -472,7 +462,16 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   }
 
   return (
-    <div className="w-full h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 relative overflow-hidden">
+    <div 
+      className="w-full h-screen flex flex-col bg-gray-50 dark:bg-gray-900 relative"
+      style={{ 
+        width: '100%', 
+        height: '100vh', 
+        overflow: 'hidden', 
+        margin: 0, 
+        padding: 0 
+      }}
+    >
       {/* Top Toolbar */}
       <div className="relative z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 shadow-sm h-16 flex items-center flex-shrink-0">
         <div className="flex items-center justify-between px-4 py-3 w-full">
@@ -534,12 +533,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             <button
               onClick={handleDownload}
               disabled={downloading}
-              className={`p-2 rounded-lg transition-colors ${
-                project.can_download
-                  ? 'bg-green-600 text-white hover:bg-green-700'
-                  : 'bg-yellow-600 text-white hover:bg-yellow-700'
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
-              title={project.can_download ? 'PDF herunterladen' : 'Download kaufen'}
+              className="p-2 rounded-lg transition-colors bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="PDF herunterladen"
             >
               <DownloadIcon className="w-5 h-5" />
             </button>
@@ -596,11 +591,14 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
       {/* Main Content Area - Container mit Abstand zum Header und zum Ende */}
       <div 
-        className="flex-1 flex items-center justify-center px-4"
+        className="flex-1 flex items-center justify-center"
         style={{ 
-          paddingTop: '80px', // Abstand zum Header
-          paddingBottom: '100px', // Abstand zum Ende
-          overflow: 'hidden'
+          width: '100%',
+          height: '100%',
+          overflow: 'hidden',
+          margin: 0,
+          padding: 0,
+          position: 'relative'
         }}
         onMouseMove={(e) => {
           if (magnifierActive && imageUrls[currentPage]) {
@@ -655,18 +653,27 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         }}
       >
         <div 
-          className="flipbook-wrapper w-full h-full flex justify-center items-center"
-          style={{ overflow: 'hidden' }}
+          className="flipbook-wrapper"
+          style={{ 
+            width: '100%',
+            height: '100%',
+            overflow: 'hidden',
+            margin: 0,
+            padding: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            position: 'relative'
+          }}
         >
           <HTMLFlipBook
             ref={flipBookRef}
-            width={800}
-            height={1000}
-            size="stretch"
+            width={pageWidth}
+            height={pageHeight}
             minWidth={300}
-            maxWidth={1000}
-            minHeight={200}
-            maxHeight={800}
+            maxWidth={1200}
+            minHeight={300}
+            maxHeight={900}
             maxShadowOpacity={0.5}
             showCover={true}
             flippingTime={1000}
@@ -674,11 +681,12 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             mobileScrollSupport={true}
             onFlip={handleFlip}
             className="flipbook-container"
-            style={{}}
+            style={{ margin: 0, padding: 0 }}
             startPage={currentPage}
             drawShadow={true}
             startZIndex={0}
-            autoSize={true}
+            autoSize={false}
+            size="stretch"
             clickEventForward={true}
             useMouseEvents={!magnifierActive}
             swipeDistance={30}
