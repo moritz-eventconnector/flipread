@@ -161,7 +161,6 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const [magnifierZoom, setMagnifierZoom] = useState(2)
   const [downloading, setDownloading] = useState(false)
   const hideNavigationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const [maxDimensions, setMaxDimensions] = useState({ width: 1200, height: 900 })
 
   // Calculate dimensions based on first page
   const firstPage = project.pages_json?.pages?.[0]
@@ -170,22 +169,6 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const aspectRatio = pageWidth / pageHeight
 
   const totalPages = project.pages_json?.total_pages || 0
-
-  // Calculate max dimensions based on viewport
-  useEffect(() => {
-    const updateDimensions = () => {
-      const containerHeight = window.innerHeight - 64 - 96 // Header + Footer
-      const containerWidth = window.innerWidth - 32 // Padding
-      setMaxDimensions({
-        width: Math.max(300, containerWidth - 100),
-        height: Math.max(200, containerHeight - 100)
-      })
-    }
-    
-    updateDimensions()
-    window.addEventListener('resize', updateDimensions)
-    return () => window.removeEventListener('resize', updateDimensions)
-  }, [])
 
   // Prepare image URLs
   useEffect(() => {
@@ -613,14 +596,11 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
       {/* Main Content Area - Container mit Abstand zum Header und zum Ende */}
       <div 
-        className="flex items-center justify-center px-4"
+        className="flex-1 flex items-center justify-center px-4"
         style={{ 
-          marginTop: '64px', // Abstand zum Header (h-16 = 64px)
-          marginBottom: '96px', // Abstand zum Ende (pb-24 = 96px)
-          height: 'calc(100vh - 64px - 96px)', // Volle Höhe minus Header und Footer
-          width: '100%',
-          overflow: 'hidden', // Wichtig: Verhindert, dass Content über Container hinausgeht
-          position: 'relative'
+          paddingTop: '80px', // Abstand zum Header
+          paddingBottom: '100px', // Abstand zum Ende
+          overflow: 'hidden'
         }}
         onMouseMove={(e) => {
           if (magnifierActive && imageUrls[currentPage]) {
@@ -675,15 +655,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         }}
       >
         <div 
-          className="flipbook-wrapper flex justify-center items-center"
-          style={{
-            width: '100%',
-            height: '100%',
-            maxWidth: '100%',
-            maxHeight: '100%',
-            overflow: 'hidden',
-            position: 'relative'
-          }}
+          className="flipbook-wrapper w-full h-full flex justify-center items-center"
+          style={{ overflow: 'hidden' }}
         >
           <HTMLFlipBook
             ref={flipBookRef}
@@ -691,9 +664,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             height={1000}
             size="stretch"
             minWidth={300}
-            maxWidth={maxDimensions.width}
+            maxWidth={1000}
             minHeight={200}
-            maxHeight={maxDimensions.height}
+            maxHeight={800}
             maxShadowOpacity={0.5}
             showCover={true}
             flippingTime={1000}
