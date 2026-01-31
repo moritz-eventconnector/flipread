@@ -77,3 +77,39 @@ def get_stripe_billing_portal_session():
         logger.error(f"Cannot import stripe.billing_portal.Session: {e}", exc_info=True)
         raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
 
+def get_stripe_customer():
+    """Safely import and return Customer class"""
+    if not ensure_stripe_api_key():
+        raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
+    
+    try:
+        from stripe import Customer
+        return Customer
+    except (ImportError, AttributeError) as e:
+        logger.error(f"Cannot import stripe.Customer: {e}", exc_info=True)
+        raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
+
+def get_stripe_error():
+    """Safely import and return stripe.error module"""
+    if not ensure_stripe_api_key():
+        raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
+    
+    try:
+        from stripe import error
+        return error
+    except (ImportError, AttributeError) as e:
+        logger.error(f"Cannot import stripe.error: {e}", exc_info=True)
+        raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
+
+def get_stripe_webhook():
+    """Safely import and return Webhook class"""
+    if not ensure_stripe_api_key():
+        raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
+    
+    try:
+        from stripe import Webhook
+        return Webhook
+    except (ImportError, AttributeError) as e:
+        logger.error(f"Cannot import stripe.Webhook: {e}", exc_info=True)
+        raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
+

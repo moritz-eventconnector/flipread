@@ -71,8 +71,13 @@ class MediaStorage(S3Boto3Storage):
                 s3_client = self.connection.meta.client
                 
                 # Use the parent's method to normalize the name (handles location prefix correctly)
-                # But we need to get the actual key that was used when saving
+                # The name parameter is the relative path stored in the database
                 normalized_name = self._normalize_name(self._clean_name(name))
+                
+                # Log for debugging (can be removed in production)
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Generating presigned URL for: name={name}, normalized={normalized_name}, bucket={self.bucket_name}")
                 
                 # Generate presigned URL
                 url = s3_client.generate_presigned_url(
@@ -83,13 +88,21 @@ class MediaStorage(S3Boto3Storage):
                     },
                     ExpiresIn=expire
                 )
+                
+                logger.debug(f"Generated presigned URL: {url[:100]}...")
                 return url
             except Exception as e:
                 # Fallback to parent implementation if presigned URL generation fails
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"Failed to generate presigned URL for {name}: {e}", exc_info=True)
-                return super().url(name, parameters)
+                logger.error(f"Failed to generate presigned URL for {name}: {e}", exc_info=True)
+                # Try parent implementation, but it will likely also fail for private files
+                try:
+                    return super().url(name, parameters)
+                except Exception as e2:
+                    logger.error(f"Parent url() also failed: {e2}")
+                    # Return a placeholder or raise
+                    raise ValueError(f"Cannot generate URL for {name}: {e}")
         
         # For public files, use parent implementation
         return super().url(name, parameters)

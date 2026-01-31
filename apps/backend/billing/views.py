@@ -17,9 +17,13 @@ from .models import StripeCustomer, Payment, Subscription, WebhookEvent
 from .stripe_init import (
     ensure_stripe_api_key,
     get_stripe_checkout_session,
-    get_stripe_billing_portal_session
+    get_stripe_billing_portal_session,
+    get_stripe_customer,
+    get_stripe_error,
+    get_stripe_webhook
 )
-import stripe
+# DO NOT import stripe directly - use helper functions from stripe_init instead
+# This ensures stripe.api_key is set before any Stripe modules are imported
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +63,8 @@ def get_or_create_stripe_customer(user):
                 logger.info(f"Creating real Stripe customer for user {user.email} (replacing mock {old_customer_id})")
                 if not ensure_stripe_api_key():
                     raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
-                customer = stripe.Customer.create(
+                Customer = get_stripe_customer()
+                customer = Customer.create(
                     email=user.email,
                     metadata={'user_id': user.id}
                 )
@@ -68,14 +73,20 @@ def get_or_create_stripe_customer(user):
                     user=user,
                     stripe_customer_id=customer.id
                 )
-            except AttributeError as e:
+            except (AttributeError, ValueError) as e:
                 logger.error(f"Stripe module error (api_key may be None): {e}", exc_info=True)
                 raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
-            except stripe.error.StripeError as e:
-                logger.error(f"Stripe API error creating customer: {e}", exc_info=True)
-                raise
-            except Exception as e:
-                logger.error(f"Unexpected error creating Stripe customer: {e}", exc_info=True)
+            except Exception as stripe_error:
+                # Check if it's a Stripe error by trying to import stripe.error
+                try:
+                    from stripe import error as stripe_error_module
+                    if isinstance(stripe_error, stripe_error_module.StripeError):
+                        logger.error(f"Stripe API error creating customer: {stripe_error}", exc_info=True)
+                        raise
+                except:
+                    pass
+                # If not a Stripe error, re-raise as generic error
+                logger.error(f"Unexpected error creating Stripe customer: {stripe_error}", exc_info=True)
                 raise
         # Valid Stripe customer - return it
         return stripe_customer
@@ -84,7 +95,8 @@ def get_or_create_stripe_customer(user):
             logger.info(f"Creating Stripe customer for user {user.email}")
             if not ensure_stripe_api_key():
                 raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
-            customer = stripe.Customer.create(
+            Customer = get_stripe_customer()
+            customer = Customer.create(
                 email=user.email,
                 metadata={'user_id': user.id}
             )
@@ -93,15 +105,21 @@ def get_or_create_stripe_customer(user):
                 user=user,
                 stripe_customer_id=customer.id
             )
-        except AttributeError as e:
+        except (AttributeError, ValueError) as e:
             # This happens when stripe.api_key is None and Stripe tries to access internal modules
             logger.error(f"Stripe module error (api_key may be None): {e}", exc_info=True)
             raise ValueError(f"Stripe module error: {str(e)}. Please check your Stripe configuration.")
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe API error creating customer: {e}", exc_info=True)
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error creating Stripe customer: {e}", exc_info=True)
+        except Exception as stripe_error:
+            # Check if it's a Stripe error by trying to import stripe.error
+            try:
+                from stripe import error as stripe_error_module
+                if isinstance(stripe_error, stripe_error_module.StripeError):
+                    logger.error(f"Stripe API error creating customer: {stripe_error}", exc_info=True)
+                    raise
+            except:
+                pass
+            # If not a Stripe error, re-raise as generic error
+            logger.error(f"Unexpected error creating Stripe customer: {stripe_error}", exc_info=True)
             raise
 
 
@@ -228,8 +246,20 @@ def checkout_download(request):
             {'error': f'Failed to create payment session: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe API Error creating checkout session for download: {e}", exc_info=True)
+    except Exception as e:
+        # Check if it's a Stripe error
+        try:
+            stripe_error = get_stripe_error()
+            if isinstance(e, stripe_error.StripeError):
+                logger.error(f"Stripe API Error creating checkout session for download: {e}", exc_info=True)
+                return Response(
+                    {'error': f'Payment system error: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        except:
+            pass
+        # If not a Stripe error, it's already handled by ValueError above
+        raise
         return Response(
             {'error': f'Payment system error: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -388,8 +418,20 @@ def checkout_hosting(request):
             {'error': f'Failed to create payment session: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe API error creating checkout session for hosting: {e}", exc_info=True)
+    except Exception as e:
+        # Check if it's a Stripe error
+        try:
+            stripe_error = get_stripe_error()
+            if isinstance(e, stripe_error.StripeError):
+                logger.error(f"Stripe API error creating checkout session for hosting: {e}", exc_info=True)
+                return Response(
+                    {'error': f'Payment system error: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        except:
+            pass
+        # If not a Stripe error, it's already handled by ValueError above
+        raise
         return Response(
             {'error': f'Payment system error: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -463,13 +505,19 @@ def billing_portal(request):
             {'error': f'Failed to access billing portal: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe API error creating billing portal session: {e}", exc_info=True)
-        return Response(
-            {'error': f'Payment system error: {str(e)}'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
     except Exception as e:
+        # Check if it's a Stripe error
+        try:
+            stripe_error = get_stripe_error()
+            if isinstance(e, stripe_error.StripeError):
+                logger.error(f"Stripe API error creating billing portal session: {e}", exc_info=True)
+                return Response(
+                    {'error': f'Failed to access billing portal: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        except:
+            pass
+        # If not a Stripe error, it's already handled by ValueError above
         logger.error(f"Unexpected error creating billing portal session: {e}", exc_info=True)
         return Response(
             {'error': f'Failed to access billing portal: {str(e)}'},
@@ -493,15 +541,24 @@ def stripe_webhook(request):
         return Response({'error': 'Webhook not configured'}, status=400)
     
     try:
-        event = stripe.Webhook.construct_event(
+        Webhook = get_stripe_webhook()
+        event = Webhook.construct_event(
             payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
         )
     except ValueError:
         logger.error("Invalid webhook payload")
         return Response({'error': 'Invalid payload'}, status=400)
-    except stripe.error.SignatureVerificationError:
-        logger.error("Invalid webhook signature")
-        return Response({'error': 'Invalid signature'}, status=400)
+    except Exception as e:
+        # Check if it's a SignatureVerificationError
+        try:
+            stripe_error = get_stripe_error()
+            if isinstance(e, stripe_error.SignatureVerificationError):
+                logger.error("Invalid webhook signature")
+                return Response({'error': 'Invalid signature'}, status=400)
+        except:
+            pass
+        # If not a SignatureVerificationError, re-raise
+        raise
     
     # Store webhook event
     webhook_event = WebhookEvent.objects.create(
