@@ -257,11 +257,26 @@ def publish_flipbook_task(project_id):
         pages_json_content = json.dumps(project.pages_json, indent=2).encode('utf-8')
         storage.save(f"{base_path}/pages.json", ContentFile(pages_json_content))
         
-        # Create and upload index.html
+        # Upload logo to published storage (public) if exists
         logo_html = ''
         if project.published_logo:
-            logo_url = project.published_logo.url if hasattr(project.published_logo, 'url') else f'/media/{project.published_logo}'
-            logo_html = f'<div id="logo-container" style="position: fixed; top: 20px; left: 20px; z-index: 1000;"><img src="{logo_url}" alt="Logo" style="max-height: 60px; max-width: 200px; object-fit: contain;"></div>'
+            try:
+                # Read logo from MediaStorage (private)
+                logo_content = project.published_logo.read()
+                logo_filename = os.path.basename(project.published_logo.name)
+                
+                # Upload to PublishedStorage (public)
+                logo_s3_path = f"{base_path}/{logo_filename}"
+                storage.save(logo_s3_path, ContentFile(logo_content))
+                
+                # Get public URL for the logo
+                logo_url = storage.url(logo_s3_path)
+                logo_html = f'<div id="logo-container" style="position: fixed; top: 20px; left: 20px; z-index: 1000;"><img src="{logo_url}" alt="Logo" style="max-height: 60px; max-width: 200px; object-fit: contain;"></div>'
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to upload logo for project {project.id}: {e}", exc_info=True)
+                # Continue without logo if upload fails
         
         index_html = f"""<!DOCTYPE html>
 <html lang="de">
