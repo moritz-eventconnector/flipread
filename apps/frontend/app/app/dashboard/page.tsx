@@ -65,7 +65,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-8 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <div className="max-w-7xl mx-auto">
         {/* Email Verification Warning */}
         {user && !user.is_email_verified && (
@@ -109,8 +109,8 @@ export default function DashboardPage() {
         </div>
 
         {user && (
-          <div className="mb-8 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg">
-            <h2 className="font-semibold mb-2">Account Status</h2>
+          <div className="mb-8 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
+            <h2 className="font-semibold mb-4 text-gray-900 dark:text-white">Account Status</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <div className="text-gray-600 dark:text-gray-400">Hosting</div>
@@ -157,9 +157,9 @@ export default function DashboardPage() {
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  className="border rounded-lg p-6 hover:shadow-lg transition"
+                  className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 hover:shadow-lg transition-all hover:border-primary-300 dark:hover:border-primary-600"
                 >
-                  <h3 className="text-xl font-semibold mb-2">{project.title}</h3>
+                  <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">{project.title}</h3>
                   <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Status: {project.status} | {project.total_pages} Seiten
                   </div>
