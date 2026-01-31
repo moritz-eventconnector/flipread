@@ -41,6 +41,91 @@ class ProjectViewSet(viewsets.ModelViewSet):
         # Start async processing
         process_pdf_task.delay(project.id)
     
+    def perform_destroy(self, instance):
+        """Delete project and all associated files"""
+        logger.info(f"Deleting project {instance.slug} (ID: {instance.id})")
+        
+        # Delete all associated files from S3
+        try:
+            from .storage import MediaStorage, PublishedStorage
+            
+            # Delete PDF file
+            if instance.pdf_file:
+                try:
+                    media_storage = MediaStorage()
+                    if instance.pdf_file.name:
+                        media_storage.delete(instance.pdf_file.name)
+                        logger.info(f"Deleted PDF file: {instance.pdf_file.name}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete PDF file: {e}")
+            
+            # Delete published logo
+            if instance.published_logo:
+                try:
+                    media_storage = MediaStorage()
+                    if instance.published_logo.name:
+                        media_storage.delete(instance.published_logo.name)
+                        logger.info(f"Deleted published logo: {instance.published_logo.name}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete published logo: {e}")
+            
+            # Delete all page images
+            for page in instance.pages.all():
+                if page.image_file:
+                    try:
+                        media_storage = MediaStorage()
+                        if page.image_file.name:
+                            media_storage.delete(page.image_file.name)
+                            logger.info(f"Deleted page image: {page.image_file.name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete page image {page.page_number}: {e}")
+            
+            # Delete published files if project is published
+            if instance.is_published and instance.published_slug:
+                try:
+                    published_storage = PublishedStorage()
+                    base_path = f"customer-{instance.user.id}-projekt-{instance.published_slug}"
+                    
+                    # List all files with this prefix and delete them
+                    # Note: S3 doesn't have a simple "delete directory" - we need to list and delete
+                    try:
+                        # Try to delete known files
+                        files_to_delete = [
+                            f"{base_path}/pages.json",
+                            f"{base_path}/index.html",
+                            f"{base_path}/app.js",
+                            f"{base_path}/app.css",
+                        ]
+                        
+                        # Add page images
+                        for page in instance.pages.all():
+                            files_to_delete.append(f"{base_path}/pages/page-{page.page_number:03d}.jpg")
+                        
+                        # Add logo if exists
+                        if instance.published_logo:
+                            logo_filename = os.path.basename(instance.published_logo.name)
+                            files_to_delete.append(f"{base_path}/{logo_filename}")
+                        
+                        # Delete all files
+                        for file_path in files_to_delete:
+                            try:
+                                published_storage.delete(file_path)
+                                logger.info(f"Deleted published file: {file_path}")
+                            except Exception as e:
+                                logger.warning(f"Failed to delete published file {file_path}: {e}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete published files: {e}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete published files: {e}")
+            
+        except Exception as e:
+            logger.error(f"Error deleting files for project {instance.slug}: {e}", exc_info=True)
+            # Continue with deletion even if file deletion fails
+        
+        # Delete the project (this will cascade delete ProjectPage objects via CASCADE)
+        instance.delete()
+        logger.info(f"Project {instance.slug} deleted successfully")
+    
     @action(detail=True, methods=['get'])
     def preview(self, request, slug=None):
         """Preview flipbook (only for owner)"""

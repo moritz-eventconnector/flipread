@@ -120,8 +120,7 @@ AWS_QUERYSTRING_AUTH = False
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 if USE_S3:
-    STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-    STATICFILES_LOCATION = 'static'
+    STATICFILES_STORAGE = 'projects.storage.StaticFilesStorage'
 else:
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
@@ -147,9 +146,9 @@ if USE_S3:
     PUBLISHED_STORAGE = 'projects.storage.PublishedStorage'
     if AWS_S3_CUSTOM_DOMAIN:
         PUBLISHED_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/'
-    elif AWS_S3_ENDPOINT_URL:
+    elif AWS_S3_ENDPOINT_URL and AWS_S3_ENDPOINT_URL.strip():
         # S3-compatible service (e.g. SafeS3)
-        endpoint_host = AWS_S3_ENDPOINT_URL.replace('https://', '').replace('http://', '').split('/')[0]
+        endpoint_host = AWS_S3_ENDPOINT_URL.strip().replace('https://', '').replace('http://', '').split('/')[0]
         PUBLISHED_URL = f'https://{endpoint_host}/{AWS_STORAGE_BUCKET_NAME}/'
     else:
         # Standard AWS S3

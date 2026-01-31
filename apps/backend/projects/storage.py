@@ -5,6 +5,24 @@ from django.conf import settings
 from storages.backends.s3boto3 import S3Boto3Storage
 
 
+class StaticFilesStorage(S3Boto3Storage):
+    """Storage for static files (CSS, JavaScript, Images)
+    
+    Only sets endpoint_url if AWS_S3_ENDPOINT_URL is provided and not empty.
+    """
+    location = 'static'
+    default_acl = 'public-read'
+    file_overwrite = False
+    custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set endpoint URL for S3-compatible services (e.g. SafeS3)
+        # Only set if provided and not empty
+        if settings.AWS_S3_ENDPOINT_URL and settings.AWS_S3_ENDPOINT_URL.strip():
+            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL.strip()
+
+
 class MediaStorage(S3Boto3Storage):
     """Storage for media files (PDFs, page images)
     
@@ -18,8 +36,9 @@ class MediaStorage(S3Boto3Storage):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Set endpoint URL for S3-compatible services (e.g. SafeS3)
-        if settings.AWS_S3_ENDPOINT_URL:
-            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL
+        # Only set if provided and not empty
+        if settings.AWS_S3_ENDPOINT_URL and settings.AWS_S3_ENDPOINT_URL.strip():
+            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL.strip()
 
 
 class PublishedStorage(S3Boto3Storage):
@@ -35,6 +54,7 @@ class PublishedStorage(S3Boto3Storage):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Set endpoint URL for S3-compatible services (e.g. SafeS3)
-        if settings.AWS_S3_ENDPOINT_URL:
-            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL
+        # Only set if provided and not empty
+        if settings.AWS_S3_ENDPOINT_URL and settings.AWS_S3_ENDPOINT_URL.strip():
+            self.endpoint_url = settings.AWS_S3_ENDPOINT_URL.strip()
 
