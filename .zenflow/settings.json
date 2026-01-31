@@ -1,0 +1,9 @@
+{
+  "setup_script": "bash scripts/update.sh",
+  "dev_script": "docker compose up",
+  "verification_script": "cd apps/frontend && npm run lint",
+  "copy_files": [
+    ".env",
+    "infra/nginx/conf.d/flipread.local.conf"
+  ]
+}
