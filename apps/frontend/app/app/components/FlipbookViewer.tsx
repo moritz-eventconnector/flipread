@@ -107,67 +107,50 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       return
     }
 
-    // Try to dynamically import from node_modules
-    const loadLibrary = async () => {
-      try {
-        // Try to import the library directly
-        const pageFlipModule = await import('page-flip')
-        if (pageFlipModule.StPageFlip || pageFlipModule.default?.StPageFlip) {
-          window.StPageFlip = pageFlipModule.StPageFlip || pageFlipModule.default.StPageFlip
-          setIsLoading(false)
-          return
-        }
-      } catch (e) {
-        console.log('Direct import failed, trying script tag:', e)
+    // Load from public/lib or CDN via script tag
+    const script = document.createElement('script')
+    const possibleSources = [
+      '/lib/page-flip.browser.js',
+      '/lib/st-pageflip.min.js',
+      '/lib/page-flip.js',
+      'https://cdn.jsdelivr.net/npm/page-flip@2.0.0/dist/page-flip.browser.js'
+    ]
+    
+    let currentIndex = 0
+    const tryLoad = () => {
+      if (currentIndex >= possibleSources.length) {
+        console.error('Failed to load StPageFlip library from any source')
+        setIsLoading(false)
+        return
       }
-
-      // Fallback: Try to load from public/lib or CDN
-      const script = document.createElement('script')
-      const possibleSources = [
-        '/lib/page-flip.browser.js',
-        '/lib/st-pageflip.min.js',
-        '/lib/page-flip.js',
-        'https://cdn.jsdelivr.net/npm/page-flip@2.0.0/dist/page-flip.browser.js'
-      ]
       
-      let currentIndex = 0
-      const tryLoad = () => {
-        if (currentIndex >= possibleSources.length) {
-          console.error('Failed to load StPageFlip library from any source')
+      script.src = possibleSources[currentIndex]
+      script.async = true
+      script.onload = () => {
+        if (window.StPageFlip) {
           setIsLoading(false)
-          return
-        }
-        
-        script.src = possibleSources[currentIndex]
-        script.async = true
-        script.onload = () => {
-          if (window.StPageFlip) {
-            setIsLoading(false)
-          } else {
-            // Try next source
-            currentIndex++
-            tryLoad()
-          }
-        }
-        script.onerror = () => {
+        } else {
           // Try next source
           currentIndex++
           tryLoad()
         }
-        
-        // Remove previous script if exists
-        const existing = document.querySelector(`script[src="${script.src}"]`)
-        if (existing) {
-          existing.remove()
-        }
-        
-        document.head.appendChild(script)
+      }
+      script.onerror = () => {
+        // Try next source
+        currentIndex++
+        tryLoad()
       }
       
-      tryLoad()
+      // Remove previous script if exists
+      const existing = document.querySelector(`script[src="${script.src}"]`)
+      if (existing) {
+        existing.remove()
+      }
+      
+      document.head.appendChild(script)
     }
-
-    loadLibrary()
+    
+    tryLoad()
 
     return () => {
       // Cleanup scripts
@@ -299,6 +282,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     if (flipbookRef.current && typeof flipbookRef.current.flip === 'function') {
       flipbookRef.current.flip(currentPage)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage])
 
   // Apply zoom
@@ -449,6 +433,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, totalPages, magnifierActive])
 
   // Handle magnifier mouse move
