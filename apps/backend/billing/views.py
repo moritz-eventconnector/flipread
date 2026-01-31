@@ -15,14 +15,16 @@ from accounts.models import User
 from projects.models import Project
 from .models import StripeCustomer, Payment, Subscription, WebhookEvent
 from .stripe_init import (
+    stripe,  # Import stripe from stripe_init where it's already initialized
     ensure_stripe_api_key,
     get_stripe_checkout_session,
     get_stripe_billing_portal_session,
     get_stripe_customer,
     get_stripe_error,
-    get_stripe_webhook
+    get_stripe_webhook,
+    is_stripe_api_key_set
 )
-# DO NOT import stripe directly - use helper functions from stripe_init instead
+# stripe is imported from stripe_init where it's already initialized with api_key
 # This ensures stripe.api_key is set before any Stripe modules are imported
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ def get_or_create_stripe_customer(user):
         raise ValueError("Stripe API key validation failed. Please check your STRIPE_SECRET_KEY configuration.")
     
     # Final verification that stripe.api_key is set (should never be None at this point)
-    if not stripe.api_key:
+    if not is_stripe_api_key_set():
         logger.error("stripe.api_key is None after ensure_stripe_api_key() - this should not happen")
         raise ValueError("Stripe API key is not set. Please check your configuration.")
     
@@ -197,7 +199,7 @@ def checkout_download(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    if not stripe.api_key:
+    if not is_stripe_api_key_set():
         logger.error("stripe.api_key is None - cannot create checkout session")
         return Response(
             {'error': 'Payment system error. Please contact support.'},
@@ -387,7 +389,7 @@ def checkout_hosting(request):
         )
     
     # Final verification that stripe.api_key is set
-    if not stripe.api_key:
+    if not is_stripe_api_key_set():
         logger.error("stripe.api_key is None - cannot create checkout session")
         return Response(
             {'error': 'Payment system error. Please contact support.'},
@@ -454,7 +456,7 @@ def checkout_hosting(request):
 def billing_portal(request):
     """Create billing portal session"""
     # DEV MODE: Return dashboard URL
-    if not stripe.api_key or not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
+    if not is_stripe_api_key_set() or not settings.STRIPE_SECRET_KEY or len(settings.STRIPE_SECRET_KEY) <= 10:
         return Response({
             'portal_url': f"{settings.SITE_URL}/app/dashboard",
             'message': 'DEV MODE: Billing portal not available'
@@ -476,7 +478,7 @@ def billing_portal(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    if not stripe.api_key:
+    if not is_stripe_api_key_set():
         logger.error("stripe.api_key is None - cannot create billing portal session")
         return Response(
             {'error': 'Payment system error. Please contact support.'},
