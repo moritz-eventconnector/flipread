@@ -15,6 +15,9 @@ class StaticFilesStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
+    # Set bucket_name as class attribute to ensure it's always set
+    bucket_name = settings.AWS_STORAGE_BUCKET_NAME.strip() if settings.AWS_STORAGE_BUCKET_NAME and settings.AWS_STORAGE_BUCKET_NAME.strip() else None
+    
     @property
     def endpoint_url(self):
         """Return endpoint URL only if it's valid, otherwise None"""
@@ -24,6 +27,10 @@ class StaticFilesStorage(S3Boto3Storage):
         return None
     
     def __init__(self, *args, **kwargs):
+        # Ensure bucket_name is set
+        if not self.bucket_name:
+            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
+        
         # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
         if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
             del kwargs['endpoint_url']
@@ -40,6 +47,9 @@ class MediaStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
+    # Set bucket_name as class attribute to ensure it's always set
+    bucket_name = settings.AWS_STORAGE_BUCKET_NAME.strip() if settings.AWS_STORAGE_BUCKET_NAME and settings.AWS_STORAGE_BUCKET_NAME.strip() else None
+    
     @property
     def endpoint_url(self):
         """Return endpoint URL only if it's valid, otherwise None"""
@@ -49,6 +59,10 @@ class MediaStorage(S3Boto3Storage):
         return None
     
     def __init__(self, *args, **kwargs):
+        # Ensure bucket_name is set
+        if not self.bucket_name:
+            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
+        
         # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
         if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
             del kwargs['endpoint_url']
@@ -65,6 +79,9 @@ class PublishedStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
+    # Set bucket_name as class attribute to ensure it's always set
+    bucket_name = settings.AWS_STORAGE_BUCKET_NAME.strip() if settings.AWS_STORAGE_BUCKET_NAME and settings.AWS_STORAGE_BUCKET_NAME.strip() else None
+    
     @property
     def endpoint_url(self):
         """Return endpoint URL only if it's valid, otherwise None"""
@@ -74,6 +91,10 @@ class PublishedStorage(S3Boto3Storage):
         return None
     
     def __init__(self, *args, **kwargs):
+        # Ensure bucket_name is set
+        if not self.bucket_name:
+            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
+        
         # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
         if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
             del kwargs['endpoint_url']

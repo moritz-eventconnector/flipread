@@ -102,13 +102,23 @@ USE_I18N = True
 USE_TZ = True
 
 # S3-Compatible Storage Configuration (AWS S3, SafeS3, etc.)
-USE_S3 = env.bool('USE_S3', default=True)
+USE_S3_ENV = env.bool('USE_S3', default=True)
 AWS_ACCESS_KEY_ID = env('AWS_ACCESS_KEY_ID', default='')
 AWS_SECRET_ACCESS_KEY = env('AWS_SECRET_ACCESS_KEY', default='')
 AWS_STORAGE_BUCKET_NAME = env('AWS_STORAGE_BUCKET_NAME', default='')
 AWS_S3_REGION_NAME = env('AWS_S3_REGION_NAME', default='eu-central-1')
 AWS_S3_ENDPOINT_URL = env('AWS_S3_ENDPOINT_URL', default='')  # For S3-compatible services (e.g. SafeS3)
 AWS_S3_CUSTOM_DOMAIN = env('AWS_S3_CUSTOM_DOMAIN', default='')  # Optional: CDN domain
+
+# Only use S3 if all required credentials are provided
+# For SafeS3 or other S3-compatible services, AWS_S3_ENDPOINT_URL is also required
+USE_S3 = (
+    USE_S3_ENV and
+    AWS_STORAGE_BUCKET_NAME and AWS_STORAGE_BUCKET_NAME.strip() and
+    AWS_ACCESS_KEY_ID and AWS_ACCESS_KEY_ID.strip() and
+    AWS_SECRET_ACCESS_KEY and AWS_SECRET_ACCESS_KEY.strip()
+)
+
 AWS_S3_OBJECT_PARAMETERS = {
     'CacheControl': 'max-age=86400',
 }
