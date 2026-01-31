@@ -107,55 +107,72 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       return
     }
 
-    // Try multiple possible paths for the library
-    const possiblePaths = [
-      '/lib/st-pageflip.min.js',
-      '/lib/page-flip.browser.js',
-      '/lib/page-flip.js'
-    ]
-    
-    let scriptPath = possiblePaths[0]
-    const script = document.createElement('script')
-    script.src = scriptPath
-    script.async = true
-    script.onload = () => {
-      if (window.StPageFlip) {
-        setIsLoading(false)
-      } else {
-        // Try next path
-        tryNextPath(1)
+    // Try to dynamically import from node_modules
+    const loadLibrary = async () => {
+      try {
+        // Try to import the library directly
+        const pageFlipModule = await import('page-flip')
+        if (pageFlipModule.StPageFlip || pageFlipModule.default?.StPageFlip) {
+          window.StPageFlip = pageFlipModule.StPageFlip || pageFlipModule.default.StPageFlip
+          setIsLoading(false)
+          return
+        }
+      } catch (e) {
+        console.log('Direct import failed, trying script tag:', e)
       }
-    }
-    script.onerror = () => {
-      tryNextPath(1)
-    }
-    
-    const tryNextPath = (index: number) => {
-      if (index >= possiblePaths.length) {
-        console.error('Failed to load StPageFlip library from any path')
-        setIsLoading(false)
-        return
+
+      // Fallback: Try to load from public/lib or CDN
+      const script = document.createElement('script')
+      const possibleSources = [
+        '/lib/page-flip.browser.js',
+        '/lib/st-pageflip.min.js',
+        '/lib/page-flip.js',
+        'https://cdn.jsdelivr.net/npm/page-flip@2.0.0/dist/page-flip.browser.js'
+      ]
+      
+      let currentIndex = 0
+      const tryLoad = () => {
+        if (currentIndex >= possibleSources.length) {
+          console.error('Failed to load StPageFlip library from any source')
+          setIsLoading(false)
+          return
+        }
+        
+        script.src = possibleSources[currentIndex]
+        script.async = true
+        script.onload = () => {
+          if (window.StPageFlip) {
+            setIsLoading(false)
+          } else {
+            // Try next source
+            currentIndex++
+            tryLoad()
+          }
+        }
+        script.onerror = () => {
+          // Try next source
+          currentIndex++
+          tryLoad()
+        }
+        
+        // Remove previous script if exists
+        const existing = document.querySelector(`script[src="${script.src}"]`)
+        if (existing) {
+          existing.remove()
+        }
+        
+        document.head.appendChild(script)
       }
       
-      const existingScript = document.querySelector(`script[src="${scriptPath}"]`)
-      if (existingScript) {
-        existingScript.remove()
-      }
-      
-      scriptPath = possiblePaths[index]
-      script.src = scriptPath
-      document.head.appendChild(script)
+      tryLoad()
     }
-    
-    document.head.appendChild(script)
+
+    loadLibrary()
 
     return () => {
-      possiblePaths.forEach(path => {
-        const existingScript = document.querySelector(`script[src="${path}"]`)
-        if (existingScript) {
-          existingScript.remove()
-        }
-      })
+      // Cleanup scripts
+      const scripts = document.querySelectorAll('script[src*="page-flip"], script[src*="st-pageflip"]')
+      scripts.forEach(s => s.remove())
     }
   }, [])
 
@@ -198,7 +215,14 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
   // Initialize StPageFlip
   useEffect(() => {
-    if (isLoading || !window.StPageFlip || !containerRef.current || imageUrls.length === 0) {
+    if (isLoading || !containerRef.current || imageUrls.length === 0) {
+      return
+    }
+
+    // Get StPageFlip from import, window, or require
+    const StPageFlipClass = StPageFlip || window.StPageFlip
+    if (!StPageFlipClass) {
+      console.error('StPageFlip is not available')
       return
     }
 
@@ -268,7 +292,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         flipbook.destroy()
       }
     }
-  }, [isLoading, imageUrls, currentPage, pageWidth, pageHeight, project.pages_json, magnifierActive])
+  }, [isLoading, imageUrls, pageWidth, pageHeight, project.pages_json, magnifierActive])
 
   // Navigate to page when currentPage changes externally
   useEffect(() => {
@@ -475,16 +499,17 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   }
 
   return (
-    <div 
-      className="w-full h-screen flex flex-col bg-gray-50 relative"
-      style={{ 
-        width: '100%', 
-        height: '100vh', 
-        overflow: 'hidden', 
-        margin: 0, 
-        padding: 0 
-      }}
-    >
+    <>
+      <div 
+        className="w-full h-screen flex flex-col bg-gray-50 relative"
+        style={{ 
+          width: '100%', 
+          height: '100vh', 
+          overflow: 'hidden', 
+          margin: 0, 
+          padding: 0 
+        }}
+      >
       {/* Top Toolbar */}
       <div className="relative z-50 bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm h-16 flex items-center flex-shrink-0">
         <div className="flex items-center justify-between px-4 py-3 w-full">
@@ -746,6 +771,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   )
 }
