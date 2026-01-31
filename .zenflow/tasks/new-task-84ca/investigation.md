@@ -116,3 +116,78 @@ After fixes:
 4. Test published flipbook loads correctly
 5. Verify direct S3 URLs are accessible
 6. Check browser console for CORS errors
+
+---
+
+## Implementation Notes
+
+### Fixes Applied
+
+#### 1. Stripe Checkout Error (COMPLETED)
+
+**Files Modified**: `apps/backend/billing/views.py`
+
+**Changes**:
+- Line 175: Changed `status=Payment.Status.SUCCEEDED` to `status=Payment.Status.COMPLETED`
+- Line 629: Changed `payment.status = Payment.Status.SUCCEEDED` to `payment.status = Payment.Status.COMPLETED`
+
+**Result**: This fixes the 500 Internal Server Error in both `/api/billing/checkout/download/` and `/api/billing/checkout/hosting/` endpoints. The status enum now correctly matches the Payment model definition.
+
+#### 2. Flipbook 403 Errors (COMPLETED)
+
+**Files Modified**: `apps/backend/projects/storage.py`
+
+**Changes**:
+- Added `url()` method to `PublishedStorage` class (lines 143-183)
+- Method generates presigned URLs for published flipbook files
+- Uses 24-hour expiration (86400 seconds) for published content
+- Includes error handling and fallback to parent implementation
+
+**Implementation Details**:
+- Similar to `MediaStorage.url()` but optimized for published content
+- Presigned URLs work regardless of S3 bucket policy settings
+- Longer expiration time (24 hours vs 1 hour) since published content is meant to be publicly accessible
+- Maintains existing `_save()` method that sets public-read ACL (for future bucket policy fixes)
+
+**Result**: Flipbook pages will now load using presigned S3 URLs instead of direct links, bypassing bucket policy restrictions that were causing 403 Forbidden errors.
+
+### Testing Status
+
+**Manual Testing Required**:
+1. Start the Django development server or Docker containers
+2. Test Stripe checkout flows:
+   - Create a new project
+   - Attempt download checkout (should not return 500 error)
+   - Attempt hosting checkout (should not return 500 error)
+3. Test flipbook display:
+   - Publish a project
+   - View the published flipbook
+   - Verify images load without 403 errors
+   - Check browser console for errors
+
+**Expected Results**:
+- Stripe checkout endpoints should return proper checkout URLs (not 500 errors)
+- Published flipbook pages should load successfully using presigned URLs
+- No 403 Forbidden errors in browser console for S3 resources
+
+### Next Steps for User
+
+1. Restart the backend service to apply changes:
+   ```bash
+   docker compose restart backend
+   ```
+
+2. For existing published projects that are currently broken, you may need to:
+   - Republish the projects to regenerate URLs with the new presigned URL logic
+   - OR trigger a cache clear if URLs are cached somewhere
+
+3. Monitor logs for any errors:
+   ```bash
+   docker compose logs -f backend
+   ```
+
+### Notes
+
+- The presigned URL approach (Option B from investigation) was chosen because it can be implemented in code and works immediately without requiring S3 bucket policy changes
+- If you later fix the S3 bucket policy to allow public reads, the presigned URLs will still work as a fallback
+- The 24-hour expiration for presigned URLs means that published flipbooks need their URLs to be regenerated daily, or you should implement a longer expiration time if needed

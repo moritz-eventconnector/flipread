@@ -140,6 +140,48 @@ class PublishedStorage(S3Boto3Storage):
             return endpoint.strip()
         return None
     
+    def url(self, name, parameters=None, expire=86400):
+        """
+        Generate presigned URL for published files.
+        Using presigned URLs ensures access even if bucket policy doesn't allow public reads.
+        expire: URL expiration time in seconds (default: 24 hours for published content)
+        """
+        try:
+            # Get the S3 client
+            s3_client = self.connection.meta.client
+            
+            # Use the parent's method to normalize the name (handles location prefix correctly)
+            normalized_name = self._normalize_name(self._clean_name(name))
+            
+            # Log for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Generating presigned URL for published file: name={name}, normalized={normalized_name}")
+            
+            # Generate presigned URL
+            url = s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': normalized_name
+                },
+                ExpiresIn=expire
+            )
+            
+            logger.debug(f"Generated presigned URL for published file: {url[:100]}...")
+            return url
+        except Exception as e:
+            # Fallback to parent implementation if presigned URL generation fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to generate presigned URL for published file {name}: {e}", exc_info=True)
+            # Try parent implementation as fallback
+            try:
+                return super().url(name, parameters)
+            except Exception as e2:
+                logger.error(f"Parent url() also failed: {e2}")
+                raise ValueError(f"Cannot generate URL for {name}: {e}")
+    
     def _save(self, name, content):
         """
         Override save to explicitly set ACL to public-read for all published files.
