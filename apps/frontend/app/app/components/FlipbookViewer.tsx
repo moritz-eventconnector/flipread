@@ -103,57 +103,84 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   // Load StPageFlip library
   useEffect(() => {
     if (window.StPageFlip) {
+      console.log('StPageFlip already available')
       setIsLoading(false)
       return
     }
 
+    console.log('Loading StPageFlip library...')
+    
     // Load from public/lib (local only, no CDN)
-    const script = document.createElement('script')
     const possibleSources = [
       '/lib/page-flip.browser.js',
       '/lib/st-pageflip.min.js',
       '/lib/page-flip.js',
-      '/lib/page-flip.browser.min.js'
+      '/lib/page-flip.browser.min.js',
+      '/lib/js/page-flip.browser.js',
+      '/lib/js/st-pageflip.min.js'
     ]
     
     let currentIndex = 0
+    let currentScript: HTMLScriptElement | null = null
+    
     const tryLoad = () => {
       if (currentIndex >= possibleSources.length) {
-        console.error('Failed to load StPageFlip library from local sources. Please ensure the library files are in /public/lib/')
+        console.error('Failed to load StPageFlip library from all sources:', possibleSources)
+        console.error('Please ensure the library files are in /public/lib/')
         setIsLoading(false)
         return
       }
       
-      script.src = possibleSources[currentIndex]
-      script.async = true
-      script.onload = () => {
-        if (window.StPageFlip) {
-          setIsLoading(false)
-        } else {
-          // Try next source
-          currentIndex++
-          tryLoad()
-        }
+      const src = possibleSources[currentIndex]
+      console.log(`Trying to load StPageFlip from: ${src}`)
+      
+      // Remove previous script if exists
+      if (currentScript) {
+        currentScript.remove()
       }
-      script.onerror = () => {
-        // Try next source
+      
+      currentScript = document.createElement('script')
+      currentScript.src = src
+      currentScript.async = true
+      currentScript.onload = () => {
+        console.log(`Script loaded: ${src}`)
+        // Wait a bit for StPageFlip to be available
+        setTimeout(() => {
+          if (window.StPageFlip) {
+            console.log('StPageFlip is now available')
+            setIsLoading(false)
+          } else {
+            console.warn(`StPageFlip not available after loading ${src}, trying next...`)
+            currentIndex++
+            tryLoad()
+          }
+        }, 100)
+      }
+      currentScript.onerror = (error) => {
+        console.warn(`Failed to load ${src}:`, error)
         currentIndex++
         tryLoad()
       }
       
-      // Remove previous script if exists
-      const existing = document.querySelector(`script[src="${script.src}"]`)
-      if (existing) {
-        existing.remove()
-      }
-      
-      document.head.appendChild(script)
+      document.head.appendChild(currentScript)
     }
     
     tryLoad()
+    
+    // Timeout: if library doesn't load within 10 seconds, stop loading
+    const timeout = setTimeout(() => {
+      if (!window.StPageFlip) {
+        console.error('Timeout: StPageFlip library did not load within 10 seconds')
+        setIsLoading(false)
+      }
+    }, 10000)
 
     return () => {
+      clearTimeout(timeout)
       // Cleanup scripts
+      if (currentScript) {
+        currentScript.remove()
+      }
       const scripts = document.querySelectorAll('script[src*="page-flip"], script[src*="st-pageflip"]')
       scripts.forEach(s => s.remove())
     }
@@ -204,9 +231,13 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     // Get StPageFlip from window
     if (!window.StPageFlip) {
-      console.error('StPageFlip is not available')
+      console.error('StPageFlip is not available - library may not have loaded yet')
+      // Set loading to false to show error state instead of infinite loading
+      setIsLoading(false)
       return
     }
+    
+    console.log('Initializing StPageFlip with', imageUrls.length, 'pages')
 
     const container = containerRef.current
     if (!container) return
@@ -476,6 +507,30 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
           <p className="text-gray-600 text-lg">Lädt Flipbook...</p>
+          {typeof window !== 'undefined' && !window.StPageFlip && (
+            <p className="text-sm text-gray-500 mt-2">
+              Bibliothek wird geladen... Falls dies länger dauert, prüfen Sie die Browser-Konsole.
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
+  
+  // Show error if library is not available but loading is done
+  if (!isLoading && imageUrls.length > 0 && typeof window !== 'undefined' && !window.StPageFlip) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="text-center max-w-md">
+          <p className="text-red-600 mb-4 text-lg font-semibold">Fehler beim Laden der Flipbook-Bibliothek</p>
+          <p className="text-gray-600 mb-2">Die StPageFlip-Bibliothek konnte nicht geladen werden.</p>
+          <p className="text-sm text-gray-500 mb-4">Bitte prüfen Sie die Browser-Konsole für weitere Details.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            Seite neu laden
+          </button>
         </div>
       </div>
     )
