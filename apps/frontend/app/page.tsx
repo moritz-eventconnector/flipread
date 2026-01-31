@@ -57,6 +57,17 @@ export default function Home() {
         <section className="relative overflow-hidden" itemScope itemType="https://schema.org/WebPage">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16">
             <div className="text-center">
+              {/* Logo */}
+              <div className="mb-8 flex justify-center">
+                <Image
+                  src="/logo.png"
+                  alt="FlipRead Logo"
+                  width={200}
+                  height={80}
+                  className="h-20 w-auto"
+                  priority
+                />
+              </div>
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 dark:text-white mb-6" itemProp="headline">
                 Erstellen Sie interaktive
                 <span className="block text-primary-600 dark:text-primary-400">Flipbooks aus PDFs</span>
