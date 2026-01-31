@@ -10,10 +10,19 @@ class ProjectPageSerializer(serializers.ModelSerializer):
         fields = ('page_number', 'image_url', 'width', 'height')
     
     def get_image_url(self, obj):
-        request = self.context.get('request')
-        if obj.image_file and request:
+        if obj.image_file:
             try:
-                return request.build_absolute_uri(obj.image_file.url)
+                url = obj.image_file.url
+                # If URL is already absolute (starts with http:// or https://), return it directly
+                # This is the case for S3 presigned URLs
+                if url.startswith('http://') or url.startswith('https://'):
+                    return url
+                # Otherwise, build absolute URI from request
+                request = self.context.get('request')
+                if request:
+                    return request.build_absolute_uri(url)
+                # Fallback: return relative URL if no request context
+                return url
             except Exception as e:
                 # Log error but don't crash - return None if URL generation fails
                 import logging
@@ -70,10 +79,19 @@ class ProjectSerializer(serializers.ModelSerializer):
         return value
     
     def get_pdf_url(self, obj):
-        request = self.context.get('request')
-        if obj.pdf_file and request:
+        if obj.pdf_file:
             try:
-                return request.build_absolute_uri(obj.pdf_file.url)
+                url = obj.pdf_file.url
+                # If URL is already absolute (starts with http:// or https://), return it directly
+                # This is the case for S3 presigned URLs
+                if url.startswith('http://') or url.startswith('https://'):
+                    return url
+                # Otherwise, build absolute URI from request
+                request = self.context.get('request')
+                if request:
+                    return request.build_absolute_uri(url)
+                # Fallback: return relative URL if no request context
+                return url
             except Exception as e:
                 # Log error but don't crash - return None if URL generation fails
                 import logging

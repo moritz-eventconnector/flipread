@@ -69,10 +69,13 @@ class MediaStorage(S3Boto3Storage):
         # For private files, generate presigned URL
         if self.default_acl == 'private':
             try:
-                # Ensure connection is initialized
+                # Ensure connection is initialized by accessing it
+                # This will trigger S3Boto3Storage to initialize the connection
                 if not hasattr(self, 'connection') or self.connection is None:
-                    # Force connection initialization
+                    # Access bucket_name to trigger connection initialization
                     _ = self.bucket_name
+                    # Access connection property to force initialization
+                    _ = self.connection
                 
                 # Get the S3 client
                 s3_client = self.connection.meta.client
@@ -81,10 +84,10 @@ class MediaStorage(S3Boto3Storage):
                 # The name parameter is the relative path stored in the database
                 normalized_name = self._normalize_name(self._clean_name(name))
                 
-                # Log for debugging (can be removed in production)
+                # Log for debugging
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.debug(f"Generating presigned URL for: name={name}, normalized={normalized_name}, bucket={self.bucket_name}")
+                logger.info(f"Generating presigned URL for: name={name}, normalized={normalized_name}, bucket={self.bucket_name}")
                 
                 # Generate presigned URL
                 url = s3_client.generate_presigned_url(
@@ -96,20 +99,16 @@ class MediaStorage(S3Boto3Storage):
                     ExpiresIn=expire
                 )
                 
-                logger.debug(f"Generated presigned URL: {url[:100]}...")
+                logger.info(f"Generated presigned URL: {url[:150]}...")
                 return url
             except Exception as e:
-                # Fallback to parent implementation if presigned URL generation fails
+                # Log detailed error for debugging
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(f"Failed to generate presigned URL for {name}: {e}", exc_info=True)
-                # Try parent implementation, but it will likely also fail for private files
-                try:
-                    return super().url(name, parameters)
-                except Exception as e2:
-                    logger.error(f"Parent url() also failed: {e2}")
-                    # Return a placeholder or raise
-                    raise ValueError(f"Cannot generate URL for {name}: {e}")
+                # Don't fallback to parent - it will fail for private files
+                # Raise the error so we can see what's wrong
+                raise ValueError(f"Cannot generate presigned URL for {name}: {e}")
         
         # For public files, use parent implementation
         return super().url(name, parameters)
