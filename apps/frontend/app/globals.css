@@ -32,4 +32,35 @@ body {
   }
 }
 
+/* Fix für react-pageflip - Keine Lücke zwischen Seiten */
+.flipbook-container,
+.flipbook-container * {
+  box-sizing: border-box;
+}
+
+.flipbook-container .stf__block {
+  margin: 0 !important;
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
+.flipbook-container .stf__item {
+  margin: 0 !important;
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
+.flipbook-container .page {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+/* Sicherstellen, dass Seiten nahtlos aneinander liegen */
+.flipbook-container .stf__block > div {
+  margin: 0 !important;
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
 

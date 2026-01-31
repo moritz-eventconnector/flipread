@@ -685,8 +685,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             startPage={currentPage}
             drawShadow={true}
             startZIndex={0}
-            autoSize={false}
-            size="stretch"
+            autoSize={true}
             clickEventForward={true}
             useMouseEvents={!magnifierActive}
             swipeDistance={30}
