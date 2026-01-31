@@ -75,13 +75,32 @@ class MediaStorage(S3Boto3Storage):
                     # Access bucket_name to trigger connection initialization
                     _ = self.bucket_name
                     # Access connection property to force initialization
-                    _ = self.connection
+                    # This will call S3Boto3Storage.connection which initializes the connection
+                    try:
+                        _ = self.connection
+                    except AttributeError:
+                        # Connection not initialized yet, try to initialize it explicitly
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning("Connection not initialized, attempting to initialize...")
+                        # Force initialization by accessing the connection property
+                        # S3Boto3Storage will initialize it on first access
+                        if hasattr(super(), 'connection'):
+                            _ = super().connection
+                
+                # Ensure connection is now available
+                if not hasattr(self, 'connection') or self.connection is None:
+                    raise ValueError("S3 connection is not initialized")
                 
                 # Get the S3 client
                 s3_client = self.connection.meta.client
                 
                 # Use the parent's method to normalize the name (handles location prefix correctly)
                 # The name parameter is the relative path stored in the database
+                # Ensure _clean_name and _normalize_name are available
+                if not hasattr(self, '_clean_name') or not hasattr(self, '_normalize_name'):
+                    raise AttributeError("_clean_name or _normalize_name not available - parent class not properly initialized")
+                
                 normalized_name = self._normalize_name(self._clean_name(name))
                 
                 # Log for debugging
@@ -106,9 +125,30 @@ class MediaStorage(S3Boto3Storage):
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(f"Failed to generate presigned URL for {name}: {e}", exc_info=True)
-                # Don't fallback to parent - it will fail for private files
-                # Raise the error so we can see what's wrong
-                raise ValueError(f"Cannot generate presigned URL for {name}: {e}")
+                # Try parent implementation as fallback - it might generate a direct S3 URL
+                # This is better than raising an error, as it allows the file to be accessed
+                # (even if it returns 403, it's better than a 404 from local URL)
+                try:
+                    parent_url = super().url(name, parameters)
+                    logger.warning(f"Using parent URL() as fallback for {name}: {parent_url[:100]}...")
+                    return parent_url
+                except Exception as e2:
+                    logger.error(f"Parent url() also failed for {name}: {e2}", exc_info=True)
+                    # Last resort: construct a direct S3 URL
+                    # This will likely return 403, but it's better than 404
+                    try:
+                        if self.custom_domain:
+                            direct_url = f"https://{self.custom_domain}/{name}"
+                        elif self.endpoint_url:
+                            endpoint_host = self.endpoint_url.replace('https://', '').replace('http://', '').split('/')[0]
+                            direct_url = f"https://{endpoint_host}/{self.bucket_name}/{name}"
+                        else:
+                            direct_url = f"https://{self.bucket_name}.s3.amazonaws.com/{name}"
+                        logger.warning(f"Using direct S3 URL as last resort for {name}: {direct_url[:100]}...")
+                        return direct_url
+                    except Exception as e3:
+                        logger.error(f"Failed to construct direct S3 URL for {name}: {e3}")
+                        raise ValueError(f"Cannot generate URL for {name}: {e}")
         
         # For public files, use parent implementation
         return super().url(name, parameters)

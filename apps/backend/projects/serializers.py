@@ -15,20 +15,43 @@ class ProjectPageSerializer(serializers.ModelSerializer):
                 url = obj.image_file.url
                 # If URL is already absolute (starts with http:// or https://), return it directly
                 # This is the case for S3 presigned URLs
-                if url.startswith('http://') or url.startswith('https://'):
+                if url and (url.startswith('http://') or url.startswith('https://')):
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"Returning presigned URL for page {obj.page_number}: {url[:100]}...")
                     return url
                 # Otherwise, build absolute URI from request
                 request = self.context.get('request')
                 if request:
-                    return request.build_absolute_uri(url)
+                    absolute_url = request.build_absolute_uri(url)
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"Built absolute URL for page {obj.page_number}: {absolute_url[:100]}...")
+                    return absolute_url
                 # Fallback: return relative URL if no request context
-                return url
-            except Exception as e:
-                # Log error but don't crash - return None if URL generation fails
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"Failed to generate image URL for page {obj.page_number}: {e}")
+                logger.warning(f"No request context for page {obj.page_number}, returning relative URL: {url}")
+                return url
+            except Exception as e:
+                # Log error with full details
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to generate image URL for page {obj.page_number}: {e}", exc_info=True)
+                # Try to return a fallback URL based on the file path
+                try:
+                    if obj.image_file.name:
+                        request = self.context.get('request')
+                        if request:
+                            fallback_url = request.build_absolute_uri(f"/media/{obj.image_file.name}")
+                            logger.warning(f"Using fallback URL for page {obj.page_number}: {fallback_url}")
+                            return fallback_url
+                except Exception as e2:
+                    logger.error(f"Failed to generate fallback URL for page {obj.page_number}: {e2}")
                 return None
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"No image_file for page {obj.page_number}")
         return None
 
 
