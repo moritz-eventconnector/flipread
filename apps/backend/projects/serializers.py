@@ -12,7 +12,14 @@ class ProjectPageSerializer(serializers.ModelSerializer):
     def get_image_url(self, obj):
         request = self.context.get('request')
         if obj.image_file and request:
-            return request.build_absolute_uri(obj.image_file.url)
+            try:
+                return request.build_absolute_uri(obj.image_file.url)
+            except Exception as e:
+                # Log error but don't crash - return None if URL generation fails
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to generate image URL for page {obj.page_number}: {e}")
+                return None
         return None
 
 
@@ -65,7 +72,14 @@ class ProjectSerializer(serializers.ModelSerializer):
     def get_pdf_url(self, obj):
         request = self.context.get('request')
         if obj.pdf_file and request:
-            return request.build_absolute_uri(obj.pdf_file.url)
+            try:
+                return request.build_absolute_uri(obj.pdf_file.url)
+            except Exception as e:
+                # Log error but don't crash - return None if URL generation fails
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to generate PDF URL for project {obj.slug}: {e}")
+                return None
         return None
     
     def get_preview_url(self, obj):

@@ -140,6 +140,13 @@ if ! docker compose ps nginx | grep -q "Up"; then
 fi
 
 echo ""
+echo "Erstelle Migrationen..."
+# Create migrations for all apps (ignore errors if no changes)
+docker compose exec -T backend python manage.py makemigrations accounts || true
+docker compose exec -T backend python manage.py makemigrations projects || true
+docker compose exec -T backend python manage.py makemigrations billing || true
+
+echo ""
 echo "Führe Migrationen aus..."
 docker compose exec -T backend python manage.py migrate
 
