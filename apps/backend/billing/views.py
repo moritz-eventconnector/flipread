@@ -172,7 +172,7 @@ def checkout_download(request):
             stripe_payment_intent_id=f'pi_dev_{project.id}',
             amount=0,
             currency='EUR',
-            status=Payment.Status.SUCCEEDED,
+            status=Payment.Status.COMPLETED,
             payment_type=Payment.PaymentType.DOWNLOAD
         )
         
@@ -626,7 +626,7 @@ def handle_checkout_session_completed(session):
         
         if payment:
             payment.stripe_payment_intent_id = session.get('payment_intent')
-            payment.status = Payment.Status.SUCCEEDED
+            payment.status = Payment.Status.COMPLETED
             payment.amount = session.get('amount_total', 0) / 100  # Convert from cents
             payment.save()
 
