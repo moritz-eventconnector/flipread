@@ -15,25 +15,21 @@ class StaticFilesStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
-    # Set bucket_name as class attribute to ensure it's always set
-    bucket_name = settings.AWS_STORAGE_BUCKET_NAME.strip() if settings.AWS_STORAGE_BUCKET_NAME and settings.AWS_STORAGE_BUCKET_NAME.strip() else None
-    
-    @property
-    def endpoint_url(self):
-        """Return endpoint URL only if it's valid, otherwise None"""
+    def __init__(self, *args, **kwargs):
+        # Set bucket_name from settings
+        bucket_name = settings.AWS_STORAGE_BUCKET_NAME
+        if not bucket_name or not bucket_name.strip():
+            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
+        kwargs['bucket_name'] = bucket_name.strip()
+        
+        # Set endpoint_url only if it's valid
         endpoint = settings.AWS_S3_ENDPOINT_URL
         if endpoint and endpoint.strip():
-            return endpoint.strip()
-        return None
-    
-    def __init__(self, *args, **kwargs):
-        # Ensure bucket_name is set
-        if not self.bucket_name:
-            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
-        
-        # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
-        if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
+            kwargs['endpoint_url'] = endpoint.strip()
+        elif 'endpoint_url' in kwargs:
+            # Remove empty endpoint_url from kwargs
             del kwargs['endpoint_url']
+        
         super().__init__(*args, **kwargs)
 
 
@@ -48,16 +44,22 @@ class MediaStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
-    # Set bucket_name as class attribute to ensure it's always set
-    bucket_name = settings.AWS_STORAGE_BUCKET_NAME.strip() if settings.AWS_STORAGE_BUCKET_NAME and settings.AWS_STORAGE_BUCKET_NAME.strip() else None
-    
-    @property
-    def endpoint_url(self):
-        """Return endpoint URL only if it's valid, otherwise None"""
+    def __init__(self, *args, **kwargs):
+        # Set bucket_name from settings
+        bucket_name = settings.AWS_STORAGE_BUCKET_NAME
+        if not bucket_name or not bucket_name.strip():
+            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
+        kwargs['bucket_name'] = bucket_name.strip()
+        
+        # Set endpoint_url only if it's valid
         endpoint = settings.AWS_S3_ENDPOINT_URL
         if endpoint and endpoint.strip():
-            return endpoint.strip()
-        return None
+            kwargs['endpoint_url'] = endpoint.strip()
+        elif 'endpoint_url' in kwargs:
+            # Remove empty endpoint_url from kwargs
+            del kwargs['endpoint_url']
+        
+        super().__init__(*args, **kwargs)
     
     def url(self, name, parameters=None, expire=3600):
         """
@@ -67,6 +69,11 @@ class MediaStorage(S3Boto3Storage):
         # For private files, generate presigned URL
         if self.default_acl == 'private':
             try:
+                # Ensure connection is initialized
+                if not hasattr(self, 'connection') or self.connection is None:
+                    # Force connection initialization
+                    _ = self.bucket_name
+                
                 # Get the S3 client
                 s3_client = self.connection.meta.client
                 
@@ -106,16 +113,6 @@ class MediaStorage(S3Boto3Storage):
         
         # For public files, use parent implementation
         return super().url(name, parameters)
-    
-    def __init__(self, *args, **kwargs):
-        # Ensure bucket_name is set
-        if not self.bucket_name:
-            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
-        
-        # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
-        if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
-            del kwargs['endpoint_url']
-        super().__init__(*args, **kwargs)
 
 
 class PublishedStorage(S3Boto3Storage):
@@ -129,16 +126,22 @@ class PublishedStorage(S3Boto3Storage):
     file_overwrite = False
     custom_domain = settings.AWS_S3_CUSTOM_DOMAIN
     
-    # Set bucket_name as class attribute to ensure it's always set
-    bucket_name = settings.AWS_STORAGE_BUCKET_NAME.strip() if settings.AWS_STORAGE_BUCKET_NAME and settings.AWS_STORAGE_BUCKET_NAME.strip() else None
-    
-    @property
-    def endpoint_url(self):
-        """Return endpoint URL only if it's valid, otherwise None"""
+    def __init__(self, *args, **kwargs):
+        # Set bucket_name from settings
+        bucket_name = settings.AWS_STORAGE_BUCKET_NAME
+        if not bucket_name or not bucket_name.strip():
+            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
+        kwargs['bucket_name'] = bucket_name.strip()
+        
+        # Set endpoint_url only if it's valid
         endpoint = settings.AWS_S3_ENDPOINT_URL
         if endpoint and endpoint.strip():
-            return endpoint.strip()
-        return None
+            kwargs['endpoint_url'] = endpoint.strip()
+        elif 'endpoint_url' in kwargs:
+            # Remove empty endpoint_url from kwargs
+            del kwargs['endpoint_url']
+        
+        super().__init__(*args, **kwargs)
     
     def url(self, name, parameters=None, expire=86400):
         """
@@ -147,6 +150,11 @@ class PublishedStorage(S3Boto3Storage):
         expire: URL expiration time in seconds (default: 24 hours for published content)
         """
         try:
+            # Ensure connection is initialized
+            if not hasattr(self, 'connection') or self.connection is None:
+                # Force connection initialization
+                _ = self.bucket_name
+            
             # Get the S3 client
             s3_client = self.connection.meta.client
             
@@ -192,6 +200,11 @@ class PublishedStorage(S3Boto3Storage):
         
         # Explicitly set ACL to public-read after upload
         try:
+            # Ensure connection is initialized
+            if not hasattr(self, 'connection') or self.connection is None:
+                # Force connection initialization
+                _ = self.bucket_name
+            
             s3_client = self.connection.meta.client
             normalized_name = self._normalize_name(self._clean_name(name))
             
@@ -208,14 +221,4 @@ class PublishedStorage(S3Boto3Storage):
             logger.warning(f"Failed to set public-read ACL for {name}: {e}", exc_info=True)
         
         return name
-    
-    def __init__(self, *args, **kwargs):
-        # Ensure bucket_name is set
-        if not self.bucket_name:
-            raise ValueError("AWS_STORAGE_BUCKET_NAME is not configured")
-        
-        # Remove endpoint_url from kwargs if it's empty to prevent passing it to parent
-        if 'endpoint_url' in kwargs and not kwargs['endpoint_url']:
-            del kwargs['endpoint_url']
-        super().__init__(*args, **kwargs)
 
