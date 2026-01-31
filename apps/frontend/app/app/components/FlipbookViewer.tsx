@@ -1,24 +1,9 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
+import HTMLFlipBook from 'react-pageflip'
 import api from '@/lib/api'
 import toast from 'react-hot-toast'
-
-// Type definitions for StPageFlip
-declare global {
-  interface Window {
-    StPageFlip: any
-    St?: {
-      PageFlip?: any
-    }
-    PageFlip?: any
-    pageFlip?: any
-    stPageFlip?: any
-    module?: {
-      exports?: any
-    }
-  }
-}
 
 interface FlipbookViewerProps {
   project: {
@@ -42,6 +27,84 @@ interface FlipbookViewerProps {
     }
   }
 }
+
+// Page component for react-pageflip (requires forwardRef)
+const Page = React.forwardRef<HTMLDivElement, { 
+  imageUrl: string
+  pageNumber: number
+  zoom: number
+  magnifierActive: boolean
+  onMagnifierMove: (x: number, y: number, mouseX: number, mouseY: number) => void
+  magnifierZoom: number
+}>(
+  ({ imageUrl, pageNumber, zoom, magnifierActive, onMagnifierMove, magnifierZoom }, ref) => {
+    const imgRef = useRef<HTMLImageElement>(null)
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!magnifierActive || !imgRef.current || !containerRef.current) return
+      
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const imgRect = imgRef.current.getBoundingClientRect()
+      
+      // Calculate mouse position relative to the image
+      const mouseX = e.clientX - imgRect.left
+      const mouseY = e.clientY - imgRect.top
+      
+      // Calculate relative position within the image (0-100%)
+      const relativeX = (mouseX / imgRect.width) * 100
+      const relativeY = (mouseY / imgRect.height) * 100
+      
+      // Clamp to image bounds
+      const clampedX = Math.max(0, Math.min(100, relativeX))
+      const clampedY = Math.max(0, Math.min(100, relativeY))
+      
+      onMagnifierMove(clampedX, clampedY, e.clientX, e.clientY)
+    }
+
+    return (
+      <div 
+        ref={ref} 
+        className="page" 
+        style={{ width: '100%', height: '100%', position: 'relative' }}
+      >
+        <div 
+          ref={containerRef}
+          className="page-content" 
+          style={{ 
+            width: '100%', 
+            height: '100%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            overflow: 'visible',
+            padding: '10px'
+          }}
+          onMouseMove={handleMouseMove}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            ref={imgRef}
+            src={imageUrl}
+            alt={`Seite ${pageNumber}`}
+            style={{ 
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+              transition: magnifierActive ? 'none' : 'transform 0.3s ease',
+              transform: `scale(${zoom})`,
+              cursor: magnifierActive ? 'none' : 'default',
+              maxWidth: 'none',
+              maxHeight: 'none'
+            }}
+            loading="lazy"
+          />
+        </div>
+      </div>
+    )
+  }
+)
+Page.displayName = 'Page'
 
 // Icon Components
 const ChevronLeftIcon = ({ className }: { className?: string }) => (
@@ -87,8 +150,7 @@ const DownloadIcon = ({ className }: { className?: string }) => (
 )
 
 export function FlipbookViewer({ project }: FlipbookViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const flipbookRef = useRef<any>(null)
+  const flipBookRef = useRef<any>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [zoom, setZoom] = useState(1)
@@ -98,179 +160,44 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const [magnifierPosition, setMagnifierPosition] = useState({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
   const [magnifierZoom, setMagnifierZoom] = useState(2)
   const [downloading, setDownloading] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const hideNavigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hideNavigationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Calculate dimensions based on first page
   const firstPage = project.pages_json?.pages?.[0]
   const pageWidth = firstPage?.width || 800
   const pageHeight = firstPage?.height || 600
   const aspectRatio = pageWidth / pageHeight
+  
+  // Calculate base dimensions dynamically based on viewport
+  // Ensure the flipbook fits within the viewport while maintaining aspect ratio
+  const calculateDimensions = () => {
+    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth - 80 : 1200
+    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight - 200 : 800
+    
+    // Calculate maximum dimensions that fit in viewport
+    const maxWidth = Math.min(1200, viewportWidth)
+    const maxHeight = Math.min(900, viewportHeight)
+    
+    // Calculate dimensions maintaining aspect ratio
+    let baseWidth = maxWidth
+    let baseHeight = Math.round(baseWidth / aspectRatio)
+    
+    // If height exceeds viewport, scale down
+    if (baseHeight > maxHeight) {
+      baseHeight = maxHeight
+      baseWidth = Math.round(baseHeight * aspectRatio)
+    }
+    
+    // Ensure minimum size
+    baseWidth = Math.max(400, baseWidth)
+    baseHeight = Math.max(300, baseHeight)
+    
+    return { baseWidth, baseHeight }
+  }
+  
+  const { baseWidth, baseHeight } = calculateDimensions()
 
   const totalPages = project.pages_json?.total_pages || 0
-
-  // Load StPageFlip library
-  useEffect(() => {
-    if (window.StPageFlip) {
-      console.log('StPageFlip already available')
-      setIsLoading(false)
-      return
-    }
-
-    console.log('Loading StPageFlip library...')
-    
-    // Load from public/lib (local only, no CDN)
-    // Try page-flip.browser.js first as it's the browser-compatible version
-    const possibleSources = [
-      '/lib/page-flip.browser.js',
-      '/lib/js/page-flip.browser.js',
-      '/lib/st-pageflip.min.js',
-      '/lib/page-flip.js',
-      '/lib/page-flip.browser.min.js',
-      '/lib/js/st-pageflip.min.js'
-    ]
-    
-    let currentIndex = 0
-    let currentScript: HTMLScriptElement | null = null
-    
-    const tryLoad = () => {
-      if (currentIndex >= possibleSources.length) {
-        console.error('Failed to load StPageFlip library from all sources:', possibleSources)
-        console.error('Please ensure the library files are in /public/lib/')
-        setIsLoading(false)
-        return
-      }
-      
-      const src = possibleSources[currentIndex]
-      console.log(`Trying to load StPageFlip from: ${src}`)
-      
-      // Remove previous script if exists
-      if (currentScript) {
-        currentScript.remove()
-      }
-      
-      currentScript = document.createElement('script')
-      currentScript.src = src
-      currentScript.async = true
-      currentScript.onload = () => {
-        console.log(`Script loaded: ${src}`)
-        // Wait a bit for StPageFlip to be available
-        // The page-flip library may export in different ways
-        setTimeout(() => {
-          // Check various possible global names and export patterns
-          let pageFlipClass: any = null
-          
-          // Try direct window properties (most common)
-          // The page-flip library exports as St.PageFlip
-          if (window.St && (window.St as any).PageFlip) {
-            pageFlipClass = (window.St as any).PageFlip
-            console.log('Found St.PageFlip on window')
-          } else if (window.StPageFlip) {
-            pageFlipClass = window.StPageFlip
-            console.log('Found StPageFlip directly on window')
-          } else if ((window as any).PageFlip) {
-            pageFlipClass = (window as any).PageFlip
-            console.log('Found PageFlip on window')
-          } else if ((window as any).pageFlip) {
-            pageFlipClass = (window as any).pageFlip
-            console.log('Found pageFlip on window')
-          } else if ((window as any).stPageFlip) {
-            pageFlipClass = (window as any).stPageFlip
-            console.log('Found stPageFlip on window')
-          }
-          
-          // Try checking the script's global scope (some UMD modules attach to globalThis)
-          if (!pageFlipClass && typeof (globalThis as any).StPageFlip !== 'undefined') {
-            pageFlipClass = (globalThis as any).StPageFlip
-            console.log('Found StPageFlip on globalThis')
-          }
-          
-          // Try UMD/CommonJS exports (if library uses module.exports)
-          if (!pageFlipClass && typeof (window as any).module !== 'undefined' && (window as any).module.exports) {
-            const moduleExports = (window as any).module.exports
-            if (moduleExports && (moduleExports.StPageFlip || moduleExports.default)) {
-              pageFlipClass = moduleExports.StPageFlip || moduleExports.default
-              console.log('Found StPageFlip in module.exports')
-            }
-          }
-          
-          // Try checking if it's exported via a factory function or constructor
-          if (!pageFlipClass && typeof (window as any).StPageFlip === 'function') {
-            pageFlipClass = (window as any).StPageFlip
-            console.log('Found StPageFlip as function')
-          }
-          
-          if (pageFlipClass) {
-            // Store it as StPageFlip for consistency (so we can use window.StPageFlip everywhere)
-            window.StPageFlip = pageFlipClass
-            console.log('StPageFlip is now available (found as:', pageFlipClass.name || 'unknown', ')')
-            setIsLoading(false)
-          } else {
-            // Debug: log what's actually available on window
-            console.error(`StPageFlip not available after loading ${src}`)
-            const relevantKeys = Object.keys(window).filter(k => 
-              k.toLowerCase().includes('page') || 
-              k.toLowerCase().includes('flip') ||
-              k.toLowerCase().includes('stpage')
-            )
-            console.warn('Available window properties:', relevantKeys.length > 0 ? relevantKeys : 'none found')
-            console.warn('Checking window object:', typeof window, 'StPageFlip type:', typeof (window as any).StPageFlip)
-            console.warn('Trying to fetch script content to debug...')
-            
-            // Try to fetch the script content to see what it exports
-            fetch(src)
-              .then(res => res.text())
-              .then(text => {
-                // Look for export patterns in the first 500 chars
-                const preview = text.substring(0, 500)
-                console.warn('Script content preview:', preview)
-                // Look for common export patterns
-                if (preview.includes('StPageFlip')) {
-                  console.warn('Script contains "StPageFlip" string')
-                }
-                if (preview.includes('window.StPageFlip')) {
-                  console.warn('Script contains "window.StPageFlip" assignment')
-                }
-                if (preview.includes('global.StPageFlip')) {
-                  console.warn('Script contains "global.StPageFlip" assignment')
-                }
-              })
-              .catch(err => console.warn('Could not fetch script for debugging:', err))
-            
-            currentIndex++
-            tryLoad()
-          }
-        }, 500) // Increased timeout to give library more time to initialize
-      }
-      currentScript.onerror = (error) => {
-        console.warn(`Failed to load ${src}:`, error)
-        currentIndex++
-        tryLoad()
-      }
-      
-      document.head.appendChild(currentScript)
-    }
-    
-    tryLoad()
-    
-    // Timeout: if library doesn't load within 10 seconds, stop loading
-    const timeout = setTimeout(() => {
-      if (!window.StPageFlip) {
-        console.error('Timeout: StPageFlip library did not load within 10 seconds')
-        setIsLoading(false)
-      }
-    }, 10000)
-
-    return () => {
-      clearTimeout(timeout)
-      // Cleanup scripts
-      if (currentScript) {
-        currentScript.remove()
-      }
-      const scripts = document.querySelectorAll('script[src*="page-flip"], script[src*="st-pageflip"]')
-      scripts.forEach(s => s.remove())
-    }
-  }, [])
 
   // Prepare image URLs
   useEffect(() => {
@@ -280,13 +207,16 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     const urls = project.pages_json.pages.map((page) => {
       const pageData = project.pages?.find(p => p.page_number === page.page_number)
+      // Use absolute URL from API or construct from file path
       let imageUrl = pageData?.image_url
       
+      // Fallback: construct URL from file path if image_url is not available
       if (!imageUrl) {
         const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || ''
         imageUrl = `${apiBase}/media/projects/${project.slug}/pages/${page.file}`
       }
       
+      // Ensure HTTPS (fix Mixed Content warnings)
       if (imageUrl && imageUrl.startsWith('http://')) {
         imageUrl = imageUrl.replace('http://', 'https://')
       }
@@ -304,161 +234,129 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     if (pageParam && project.pages_json?.total_pages) {
       const pageNum = parseInt(pageParam, 10)
       if (pageNum >= 1 && pageNum <= project.pages_json.total_pages) {
-        setCurrentPage(pageNum - 1)
+        setCurrentPage(pageNum - 1) // react-pageflip uses 0-based index
       }
     }
   }, [project.pages_json?.total_pages])
 
-  // Initialize StPageFlip
+  // Navigate to initial page when flipbook is ready
   useEffect(() => {
-    if (isLoading || !containerRef.current || imageUrls.length === 0) {
-      return
-    }
-
-    // Get StPageFlip from window
-    if (!window.StPageFlip) {
-      console.error('StPageFlip is not available - library may not have loaded yet')
-      // Set loading to false to show error state instead of infinite loading
-      setIsLoading(false)
-      return
-    }
+    if (!flipBookRef.current || imageUrls.length === 0) return
     
-    console.log('Initializing StPageFlip with', imageUrls.length, 'pages')
-
-    const container = containerRef.current
-    if (!container) return
-
-    // Calculate dimensions
-    const maxWidth = Math.min(1200, window.innerWidth - 40)
-    const maxHeight = Math.min(900, window.innerHeight - 200)
-    const aspectRatio = pageWidth / pageHeight
-    let width = maxWidth
-    let height = Math.round(width / aspectRatio)
+    // Wait for component to be fully mounted and initialized
+    const timer = setTimeout(() => {
+      if (flipBookRef.current) {
+        try {
+          const pageFlip = flipBookRef.current.getPageFlip?.()
+          if (pageFlip && typeof pageFlip.turnToPage === 'function' && currentPage > 0) {
+            pageFlip.turnToPage(currentPage)
+          }
+        } catch (error) {
+          console.warn('FlipbookViewer: Could not navigate to page', error)
+        }
+      }
+    }, 500) // Increased delay to ensure component is ready
     
-    if (height > maxHeight) {
-      height = maxHeight
-      width = Math.round(height * aspectRatio)
-    }
+    return () => clearTimeout(timer)
+  }, [currentPage, imageUrls.length])
 
-    // Create flipbook instance
-    const flipbook = new window.StPageFlip(container, {
-      width: width,
-      height: height,
-      showCover: true,
-      maxShadowOpacity: 0.5,
-      flippingTime: 1000,
-      usePortrait: aspectRatio < 1,
-      startPage: currentPage,
-      size: 'stretch',
-      minWidth: 300,
-      maxWidth: 1200,
-      minHeight: 300,
-      maxHeight: 900,
-      drawShadow: true,
-      autoSize: true,
-      useMouseEvents: !magnifierActive,
-      swipeDistance: 30,
-    })
 
-    flipbookRef.current = flipbook
-
-    // Load pages using loadFromImages (correct API for page-flip library)
-    // The method expects an array of image URLs (strings)
-    flipbook.loadFromImages(imageUrls)
-
-    // Handle page flip event
-    flipbook.on('flip', (e: any) => {
-      // Use getCurrentPageIndex() to get the actual page number (not spread number)
-      const newPage = flipbook.getCurrentPageIndex ? flipbook.getCurrentPageIndex() : e.data
-      setCurrentPage(newPage)
-      
-      // Update URL
-      const url = new URL(window.location.href)
-      url.searchParams.set('page', (newPage + 1).toString())
-      window.history.pushState({}, '', url.toString())
-    })
-
-    // Handle init event (when flipbook is ready)
-    flipbook.on('init', () => {
-      console.log('Flipbook initialized')
-      if (currentPage > 0) {
-        flipbook.turnToPage(currentPage)
-      }
-    })
-
-    // Cleanup
-    return () => {
-      if (flipbook && typeof flipbook.destroy === 'function') {
-        flipbook.destroy()
-      }
-    }
-  }, [isLoading, imageUrls, pageWidth, pageHeight, project.pages_json, magnifierActive])
-
-  // Navigate to page when currentPage changes externally
-  useEffect(() => {
-    if (flipbookRef.current && typeof flipbookRef.current.turnToPage === 'function') {
-      flipbookRef.current.turnToPage(currentPage)
-    }
-  }, [currentPage])
-
-  // Apply zoom
-  useEffect(() => {
-    if (!containerRef.current || !flipbookRef.current) return
-
-    const container = containerRef.current
-    container.style.transform = `scale(${zoom})`
-    container.style.transformOrigin = 'center center'
-  }, [zoom])
+  const handleFlip = (e: any) => {
+    const newPage = e.data
+    setCurrentPage(newPage)
+    
+    // Update URL
+    const url = new URL(window.location.href)
+    url.searchParams.set('page', (newPage + 1).toString())
+    window.history.pushState({}, '', url.toString())
+  }
 
   const goToPage = (pageIndex: number) => {
     if (pageIndex < 0 || pageIndex >= totalPages) return
     
-    if (flipbookRef.current && typeof flipbookRef.current.turnToPage === 'function') {
-      // Use turnToPage for direct navigation (more reliable than flip)
-      flipbookRef.current.turnToPage(pageIndex)
-      setCurrentPage(pageIndex)
-      const url = new URL(window.location.href)
-      url.searchParams.set('page', (pageIndex + 1).toString())
-      window.history.pushState({}, '', url.toString())
-    } else if (flipbookRef.current && typeof flipbookRef.current.flip === 'function') {
-      flipbookRef.current.flip(pageIndex)
-      setCurrentPage(pageIndex)
-      const url = new URL(window.location.href)
-      url.searchParams.set('page', (pageIndex + 1).toString())
-      window.history.pushState({}, '', url.toString())
+    if (flipBookRef.current) {
+      try {
+        // react-pageflip: Use getPageFlip() to get the instance
+        const pageFlip = flipBookRef.current.getPageFlip?.()
+        
+        if (pageFlip) {
+          // Use turnToPage for direct navigation
+          if (typeof pageFlip.turnToPage === 'function') {
+            pageFlip.turnToPage(pageIndex)
+            setCurrentPage(pageIndex)
+            const url = new URL(window.location.href)
+            url.searchParams.set('page', (pageIndex + 1).toString())
+            window.history.pushState({}, '', url.toString())
+            return
+          }
+        }
+        
+        // Fallback: directly update state
+        setCurrentPage(pageIndex)
+        const url = new URL(window.location.href)
+        url.searchParams.set('page', (pageIndex + 1).toString())
+        window.history.pushState({}, '', url.toString())
+      } catch (error) {
+        console.error('FlipbookViewer: Could not navigate to page', error)
+        // Fallback: directly update state
+        setCurrentPage(pageIndex)
+      }
     } else {
+      // Fallback: directly update state if ref is not available
       setCurrentPage(pageIndex)
     }
   }
 
   const flipNext = () => {
-    if (!flipbookRef.current || currentPage >= totalPages - 1) return
+    if (!flipBookRef.current || currentPage >= totalPages - 1) return
     
-    if (typeof flipbookRef.current.flipNext === 'function') {
-      flipbookRef.current.flipNext()
-    } else {
+    try {
+      // react-pageflip: Use getPageFlip() to get the instance
+      const pageFlip = flipBookRef.current.getPageFlip?.()
+      
+      if (pageFlip && typeof pageFlip.flipNext === 'function') {
+        pageFlip.flipNext()
+      } else {
+        // Fallback: navigate directly
+        const newPage = Math.min(currentPage + 1, totalPages - 1)
+        goToPage(newPage)
+      }
+    } catch (error) {
+      console.error('FlipbookViewer: Error flipping next', error)
+      // Fallback: navigate directly
       const newPage = Math.min(currentPage + 1, totalPages - 1)
       goToPage(newPage)
     }
   }
 
   const flipPrev = () => {
-    if (!flipbookRef.current || currentPage <= 0) return
+    if (!flipBookRef.current || currentPage <= 0) return
     
-    if (typeof flipbookRef.current.flipPrev === 'function') {
-      flipbookRef.current.flipPrev()
-    } else {
+    try {
+      // react-pageflip: Use getPageFlip() to get the instance
+      const pageFlip = flipBookRef.current.getPageFlip?.()
+      
+      if (pageFlip && typeof pageFlip.flipPrev === 'function') {
+        pageFlip.flipPrev()
+      } else {
+        // Fallback: navigate directly
+        const newPage = Math.max(currentPage - 1, 0)
+        goToPage(newPage)
+      }
+    } catch (error) {
+      console.error('FlipbookViewer: Error flipping prev', error)
+      // Fallback: navigate directly
       const newPage = Math.max(currentPage - 1, 0)
       goToPage(newPage)
     }
   }
 
   const handleZoomIn = () => {
-    setZoom((prev: number) => Math.min(prev + 0.25, 3))
+    setZoom(prev => Math.min(prev + 0.25, 3))
   }
 
   const handleZoomOut = () => {
-    setZoom((prev: number) => Math.max(prev - 0.25, 0.5))
+    setZoom(prev => Math.max(prev - 0.25, 0.5))
   }
 
   const handleZoomReset = () => {
@@ -466,10 +364,16 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   }
 
   const handleDownload = async () => {
+    if (!project.can_download) {
+      // Redirect to download purchase page
+      window.location.href = `/app/projects/${project.slug}/download`
+      return
+    }
+
     setDownloading(true)
     try {
-      // Always allow download from viewer (PDF only, no payment check)
-      const response = await api.get(`/projects/${project.slug}/download_pdf/?from_viewer=true`, {
+      // Download the original PDF file
+      const response = await api.get(`/projects/${project.slug}/download_pdf/`, {
         responseType: 'blob',
       })
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
@@ -482,7 +386,12 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       window.URL.revokeObjectURL(url)
       toast.success('PDF-Download gestartet')
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Fehler beim Download')
+      if (error.response?.status === 402) {
+        // Payment required - redirect to purchase page
+        window.location.href = `/app/projects/${project.slug}/download`
+      } else {
+        toast.error(error.response?.data?.error || 'Fehler beim Download')
+      }
     } finally {
       setDownloading(false)
     }
@@ -497,7 +406,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       }
       hideNavigationTimeoutRef.current = setTimeout(() => {
         setShowNavigation(false)
-      }, 3000)
+      }, 3000) // Hide after 3 seconds of inactivity
     }
 
     resetHideTimer()
@@ -528,28 +437,38 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!flipBookRef.current) return
+      
+      // Don't handle keyboard if user is typing in an input
       if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') {
         return
       }
+      
+      try {
+        const pageFlip = flipBookRef.current.getPageFlip?.()
+        if (!pageFlip || typeof pageFlip.flipPrev !== 'function') return
 
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        flipPrev()
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        flipNext()
-      } else if (e.key === '+' || e.key === '=') {
-        e.preventDefault()
-        handleZoomIn()
-      } else if (e.key === '-') {
-        e.preventDefault()
-        handleZoomOut()
-      } else if (e.key === '0') {
-        e.preventDefault()
-        handleZoomReset()
-      } else if (e.key === 'm' || e.key === 'M') {
-        e.preventDefault()
-        setMagnifierActive(!magnifierActive)
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          flipPrev()
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          flipNext()
+        } else if (e.key === '+' || e.key === '=') {
+          e.preventDefault()
+          handleZoomIn()
+        } else if (e.key === '-') {
+          e.preventDefault()
+          handleZoomOut()
+        } else if (e.key === '0') {
+          e.preventDefault()
+          handleZoomReset()
+        } else if (e.key === 'm' || e.key === 'M') {
+          e.preventDefault()
+          setMagnifierActive(!magnifierActive)
+        }
+      } catch (error) {
+        console.warn('FlipbookViewer: Keyboard navigation error', error)
       }
     }
 
@@ -560,124 +479,64 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, totalPages, magnifierActive])
 
-  // Handle magnifier mouse move
-  const handleMagnifierMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!magnifierActive || !containerRef.current) return
-
-    const container = containerRef.current
-    const rect = container.getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-
-    // Check if mouse is over the container
-    if (mouseX >= 0 && mouseX <= rect.width && mouseY >= 0 && mouseY <= rect.height) {
-      // Calculate relative position (0-100%)
-      const relativeX = (mouseX / rect.width) * 100
-      const relativeY = (mouseY / rect.height) * 100
-
-      setMagnifierPosition({
-        x: relativeX,
-        y: relativeY,
-        mouseX: e.clientX,
-        mouseY: e.clientY,
-      })
-    } else {
-      setMagnifierPosition({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
-    }
-  }
-
   if (!project.pages_json || !project.pages_json.pages || project.pages_json.pages.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="text-center">
-          <p className="text-red-600 mb-4 text-lg">Fehler: Projekt-Daten sind unvollständig</p>
+          <p className="text-red-600 dark:text-red-400 mb-4 text-lg">Fehler: Projekt-Daten sind unvollständig</p>
         </div>
       </div>
     )
   }
 
-  if (isLoading || imageUrls.length === 0) {
+  if (imageUrls.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">Lädt Flipbook...</p>
-          {typeof window !== 'undefined' && !window.StPageFlip && (
-            <p className="text-sm text-gray-500 mt-2">
-              Bibliothek wird geladen... Falls dies länger dauert, prüfen Sie die Browser-Konsole.
-            </p>
-          )}
-        </div>
-      </div>
-    )
-  }
-  
-  // Show error if library is not available but loading is done
-  if (!isLoading && imageUrls.length > 0 && typeof window !== 'undefined' && !window.StPageFlip) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-        <div className="text-center max-w-md">
-          <p className="text-red-600 mb-4 text-lg font-semibold">Fehler beim Laden der Flipbook-Bibliothek</p>
-          <p className="text-gray-600 mb-2">Die StPageFlip-Bibliothek konnte nicht geladen werden.</p>
-          <p className="text-sm text-gray-500 mb-4">Bitte prüfen Sie die Browser-Konsole für weitere Details.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-          >
-            Seite neu laden
-          </button>
+          <p className="text-gray-600 dark:text-gray-400 text-lg">Lädt Flipbook...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <>
-      <div 
-        className="w-full h-screen flex flex-col bg-gray-200 relative"
-        style={{ 
-          width: '100%', 
-          height: '100vh', 
-          overflow: 'hidden', 
-          margin: 0, 
-          padding: 0 
-        }}
-      >
+    <div className="w-full h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 relative overflow-hidden">
       {/* Top Toolbar */}
-      <div className="relative z-50 bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm h-16 flex items-center flex-shrink-0">
+      <div className="relative z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 shadow-sm h-16 flex items-center flex-shrink-0">
         <div className="flex items-center justify-between px-4 py-3 w-full">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900 truncate max-w-xs">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate max-w-xs">
               {project.title}
             </h2>
           </div>
           
           <div className="flex items-center gap-2">
             {/* Zoom Controls */}
-            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
               <button
                 onClick={handleZoomOut}
                 disabled={zoom <= 0.5}
-                className="p-2 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Verkleinern (Strg + -)"
               >
-                <ZoomOutIcon className="w-5 h-5 text-gray-700" />
+                <ZoomOutIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
               </button>
-              <span className="px-3 py-1 text-sm font-medium text-gray-700 min-w-[60px] text-center">
+              <span className="px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[60px] text-center">
                 {Math.round(zoom * 100)}%
               </span>
               <button
                 onClick={handleZoomIn}
                 disabled={zoom >= 3}
-                className="p-2 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="Vergrößern (Strg + +)"
               >
-                <ZoomInIcon className="w-5 h-5 text-gray-700" />
+                <ZoomInIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
               </button>
               {zoom !== 1 && (
                 <button
                   onClick={handleZoomReset}
-                  className="px-3 py-1 text-xs text-gray-600 hover:text-gray-900 transition-colors"
+                  className="px-3 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
                   title="Zoom zurücksetzen (0)"
                 >
                   Reset
@@ -691,7 +550,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
               className={`p-2 rounded-lg transition-colors ${
                 magnifierActive 
                   ? 'bg-primary-600 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
               title="Lupe aktivieren (M) - Hovern Sie über die Seite zum Zoomen"
             >
@@ -704,8 +563,12 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             <button
               onClick={handleDownload}
               disabled={downloading}
-              className="p-2 rounded-lg transition-colors bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="PDF herunterladen"
+              className={`p-2 rounded-lg transition-colors ${
+                project.can_download
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : 'bg-yellow-600 text-white hover:bg-yellow-700'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={project.can_download ? 'PDF herunterladen' : 'Download kaufen'}
             >
               <DownloadIcon className="w-5 h-5" />
             </button>
@@ -716,7 +579,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
               className={`p-2 rounded-lg transition-colors ${
                 showThumbnails 
                   ? 'bg-primary-600 text-white' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
               title="Seitenübersicht"
             >
@@ -739,51 +602,131 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             overflow: 'hidden',
             backgroundImage: `url(${imageUrls[currentPage]})`,
             backgroundRepeat: 'no-repeat',
-            backgroundSize: `${100 / magnifierZoom}%`,
-            backgroundPosition: `${magnifierPosition.x}% ${magnifierPosition.y}%`,
+            // Calculate background size: image should be magnified by magnifierZoom factor
+            // backgroundSize in %: 100% = original size, 50% = 2x zoom (image appears 2x larger)
+            // For a 2x zoom, we want the image to be 50% of its original size in the lens
+            // This makes it appear 2x larger (only 50% of the zoomed image fits in the lens)
+            // Formula: backgroundSize = 100 / magnifierZoom
+            backgroundSize: `${200 / magnifierZoom}%`,
+            // Background position: Center the magnified area on the mouse position
+            // The position is already in percentage (0-100%), so we need to adjust for the zoom
+            // When backgroundSize is 50% (2x zoom), the image is 2x larger, so we need to offset
+            // Formula: position = mousePosition% * (100 / magnifierZoom) - (50 / magnifierZoom)
+            // For 2x zoom: position = mouseX% * 50% - 25% = (mouseX% - 50%) * 50%
+            // Simplified: position = (mousePosition% - 50%) * (100 / magnifierZoom) + 50%
+            backgroundPosition: `${Math.max(0, Math.min(100, (magnifierPosition.x - 50) * (100 / magnifierZoom) + 50))}% ${Math.max(0, Math.min(100, (magnifierPosition.y - 50) * (100 / magnifierZoom) + 50))}%`,
             display: 'block',
             left: `${magnifierPosition.mouseX - 100}px`,
             top: `${magnifierPosition.mouseY - 100}px`,
             transition: 'none',
             cursor: 'none',
-            transform: 'translateZ(0)',
-            willChange: 'transform'
+            transform: 'translateZ(0)', // Force hardware acceleration
+            willChange: 'transform' // Optimize for animation
           }}
         />
       )}
 
       {/* Main Content Area */}
       <div 
-        className="flex-1 flex items-center justify-center"
-        style={{ 
-          width: '100%',
-          height: '100%',
-          overflow: 'hidden',
-          margin: 0,
-          padding: 0,
-          position: 'relative'
+        className="flex-1 flex items-center justify-center pb-24 px-4 overflow-hidden"
+        onMouseMove={(e) => {
+          if (magnifierActive && imageUrls[currentPage]) {
+            // Find the actual page image element within the flipbook
+            const flipbookContainer = document.querySelector('.flipbook-container')
+            if (!flipbookContainer) return
+            
+            // Try to find the current page's image
+            const pageElements = flipbookContainer.querySelectorAll('.page img, .page-content img, img')
+            let currentPageImg: HTMLImageElement | null = null
+            
+            // Get the visible page image (react-pageflip shows two pages at a time)
+            for (let i = 0; i < pageElements.length; i++) {
+              const img = pageElements[i] as HTMLImageElement
+              const rect = img.getBoundingClientRect()
+              // Check if mouse is over this image
+              if (e.clientX >= rect.left && e.clientX <= rect.right && 
+                  e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                currentPageImg = img
+                break
+              }
+            }
+            
+            // Fallback: use first visible image if none found
+            if (!currentPageImg && pageElements.length > 0) {
+              currentPageImg = pageElements[0] as HTMLImageElement
+            }
+            
+            if (currentPageImg) {
+              const imgRect = currentPageImg.getBoundingClientRect()
+              const mouseX = e.clientX - imgRect.left
+              const mouseY = e.clientY - imgRect.top
+              
+              // Check if mouse is over the image
+              if (mouseX >= 0 && mouseX <= imgRect.width && mouseY >= 0 && mouseY <= imgRect.height) {
+                // Calculate relative position within the image (0-100%)
+                const relativeX = (mouseX / imgRect.width) * 100
+                const relativeY = (mouseY / imgRect.height) * 100
+                
+                setMagnifierPosition({ 
+                  x: relativeX, 
+                  y: relativeY, 
+                  mouseX: e.clientX, 
+                  mouseY: e.clientY 
+                })
+              } else {
+                // Hide magnifier if outside image
+                setMagnifierPosition({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
+              }
+            }
+          }
         }}
-        onMouseMove={handleMagnifierMove}
       >
-        <div 
-          ref={containerRef}
-          className="flipbook-wrapper"
-          style={{ 
-            width: '100%',
-            height: '100%',
-            overflow: 'hidden',
-            margin: 0,
-            padding: 0,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            position: 'relative',
-            transition: 'transform 0.3s ease'
-          }}
-        />
+        <div className="flipbook-wrapper w-full h-full flex justify-center items-center">
+          <HTMLFlipBook
+            ref={flipBookRef}
+            width={baseWidth}
+            height={baseHeight}
+            size="stretch"
+            minWidth={400}
+            maxWidth={1200}
+            minHeight={300}
+            maxHeight={900}
+            maxShadowOpacity={0.5}
+            showCover={true}
+            flippingTime={1000}
+            usePortrait={aspectRatio < 1}
+            mobileScrollSupport={true}
+            onFlip={handleFlip}
+            className="flipbook-container"
+            style={{}}
+            startPage={currentPage}
+            drawShadow={true}
+            startZIndex={0}
+            autoSize={false}
+            clickEventForward={true}
+            useMouseEvents={!magnifierActive}
+            swipeDistance={30}
+            showPageCorners={true}
+            disableFlipByClick={magnifierActive}
+          >
+            {imageUrls.map((imageUrl, index) => (
+              <Page
+                key={index}
+                imageUrl={imageUrl}
+                pageNumber={index + 1}
+                zoom={zoom}
+                magnifierActive={magnifierActive}
+                onMagnifierMove={(relX, relY, mouseX, mouseY) => {
+                  setMagnifierPosition({ x: relX, y: relY, mouseX, mouseY })
+                }}
+                magnifierZoom={magnifierZoom}
+              />
+            ))}
+          </HTMLFlipBook>
+        </div>
       </div>
 
-      {/* Floating Navigation Buttons */}
+      {/* Floating Navigation Buttons - Subtle and Auto-hide */}
       <div 
         className={`fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-500 ${
           showNavigation ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
@@ -798,12 +741,12 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
           }, 2000)
         }}
       >
-        <div className="flex items-center gap-3 bg-white/80 backdrop-blur-lg rounded-full px-4 py-2 shadow-xl border border-gray-200/50">
+        <div className="flex items-center gap-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg rounded-full px-4 py-2 shadow-xl border border-gray-200/50 dark:border-gray-700/50">
           {/* Previous Button */}
           <button
             onClick={flipPrev}
             disabled={currentPage === 0}
-            className="p-2 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 disabled:hover:scale-100"
+            className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 disabled:hover:scale-100"
             title="Vorherige Seite (←)"
           >
             <ChevronLeftIcon className="w-5 h-5" />
@@ -811,17 +754,18 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
           {/* Page Info with Input */}
           <div className="flex items-center gap-1 px-3">
-            <span className="text-sm text-gray-600">Seite</span>
+            <span className="text-sm text-gray-600 dark:text-gray-400">Seite</span>
             <input
               type="number"
               value={currentPage + 1}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              onChange={(e) => {
                 const pageNum = parseInt(e.target.value, 10)
                 if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
                   goToPage(pageNum - 1)
                 }
               }}
-              onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+              onBlur={(e) => {
+                // On blur, if input is empty or invalid, revert to current page
                 const pageNum = parseInt(e.target.value, 10)
                 if (isNaN(pageNum) || pageNum < 1 || pageNum > totalPages) {
                   e.target.value = (currentPage + 1).toString()
@@ -829,10 +773,10 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
               }}
               min={1}
               max={totalPages}
-              className="w-12 text-center bg-transparent border-b border-gray-300 text-lg font-bold text-gray-900 focus:outline-none focus:border-primary-500"
+              className="w-12 text-center bg-transparent border-b border-gray-300 dark:border-gray-600 text-lg font-bold text-gray-900 dark:text-white focus:outline-none focus:border-primary-500"
             />
-            <span className="text-sm text-gray-600">von</span>
-            <span className="text-lg font-bold text-gray-900">
+            <span className="text-sm text-gray-600 dark:text-gray-400">von</span>
+            <span className="text-lg font-bold text-gray-900 dark:text-white">
               {totalPages}
             </span>
           </div>
@@ -841,7 +785,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
           <button
             onClick={flipNext}
             disabled={currentPage >= totalPages - 1}
-            className="p-2 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 disabled:hover:scale-100"
+            className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 disabled:hover:scale-100"
             title="Nächste Seite (→)"
           >
             <ChevronRightIcon className="w-5 h-5" />
@@ -851,16 +795,16 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
       {/* Thumbnail Sidebar */}
       {showThumbnails && (
-        <div className="absolute top-16 right-0 bottom-24 w-64 bg-white/95 backdrop-blur-md border-l border-gray-200 shadow-xl z-40 overflow-y-auto">
+        <div className="absolute top-16 right-0 bottom-24 w-64 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-l border-gray-200 dark:border-gray-700 shadow-xl z-40 overflow-y-auto">
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Seitenübersicht</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Seitenübersicht</h3>
               <button
                 onClick={() => setShowThumbnails(false)}
-                className="p-1 rounded-md hover:bg-gray-100 transition-colors"
+                className="p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 title="Schließen"
               >
-                <XIcon className="w-5 h-5 text-gray-600" />
+                <XIcon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -873,8 +817,8 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
                   }}
                   className={`relative aspect-[3/4] rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
                     index === currentPage
-                      ? 'border-primary-600 ring-2 ring-primary-300'
-                      : 'border-gray-200 hover:border-primary-400'
+                      ? 'border-primary-600 ring-2 ring-primary-300 dark:ring-primary-800'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-primary-400 dark:hover:border-primary-600'
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -883,7 +827,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
                     alt={`Seite ${index + 1}`}
                     className="w-full h-full object-cover"
                     loading="lazy"
-                    onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+                    onError={(e) => {
                       console.error(`Failed to load thumbnail for page ${index + 1}`)
                       e.currentTarget.src = '/placeholder-page.png'
                     }}
@@ -904,7 +848,6 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
           </div>
         </div>
       )}
-      </div>
-    </>
+    </div>
   )
 }

@@ -125,6 +125,8 @@ def get_stripe_error():
 
 def get_stripe_webhook():
     """Safely import and return Webhook class"""
+    if stripe is None:
+        raise ValueError("Stripe module is not available. Please install the stripe package.")
     if not ensure_stripe_api_key():
         raise ValueError("Stripe API key is not configured. Please set STRIPE_SECRET_KEY in your environment.")
     

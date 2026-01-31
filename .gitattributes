@@ -1,5 +1,2 @@
-# Ensure shell scripts are executable
-*.sh text eol=lf
-# Ignore file mode changes (executable bit) for shell scripts
-# This prevents git from seeing chmod +x as a change
-*.sh -diff
+# Auto detect text files and perform LF normalization
+* text=auto
