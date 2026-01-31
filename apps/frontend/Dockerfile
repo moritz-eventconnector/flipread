@@ -24,11 +24,13 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Copy page-flip library files to public/lib for standalone viewer
 # This allows the standalone HTML viewer to load the library locally (no external CDN)
+# The prebuild script will handle this, but we also do it here as fallback
 RUN mkdir -p ./public/lib && \
     (cp -r ./node_modules/page-flip/dist/* ./public/lib/ 2>/dev/null || \
      find ./node_modules -name "page-flip" -type d 2>/dev/null | head -1 | xargs -I {} cp -r {}/dist/* ./public/lib/ 2>/dev/null || \
      echo "Warning: page-flip files not found")
 RUN npm run build
+RUN ls -la ./public/lib/ || echo "public/lib directory check"
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -41,9 +43,9 @@ RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 
-# Copy page-flip library files from builder's node_modules to public directory
+# Copy page-flip library files from builder's public/lib to public directory
 # This allows the standalone HTML viewer to load the library locally (no external CDN)
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/page-flip/dist ./public/lib
+COPY --from=builder --chown=nextjs:nodejs /app/public/lib ./public/lib
 
 # Copy standalone build
 # Next.js 14 with output: 'standalone' creates the entire app in .next/standalone
