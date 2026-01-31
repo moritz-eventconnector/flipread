@@ -65,19 +65,19 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen p-8 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen p-8 bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="max-w-7xl mx-auto">
         {/* Email Verification Warning */}
         {user && !user.is_email_verified && (
-          <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
-                <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
                 <div>
-                  <p className="font-semibold text-yellow-800 dark:text-yellow-200">Email nicht verifiziert</p>
-                  <p className="text-sm text-yellow-600 dark:text-yellow-300">Bitte verifizieren Sie Ihre Email-Adresse, um alle Funktionen nutzen zu können.</p>
+                  <p className="font-semibold text-yellow-800">Email nicht verifiziert</p>
+                  <p className="text-sm text-yellow-600">Bitte verifizieren Sie Ihre Email-Adresse, um alle Funktionen nutzen zu können.</p>
                 </div>
               </div>
               <Link
@@ -101,7 +101,7 @@ export default function DashboardPage() {
             </Link>
             <button
               onClick={handleLogout}
-              className="px-4 py-2 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="px-4 py-2 border rounded-lg hover:bg-gray-100"
             >
               Abmelden
             </button>
@@ -109,17 +109,17 @@ export default function DashboardPage() {
         </div>
 
         {user && (
-          <div className="mb-8 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
-            <h2 className="font-semibold mb-4 text-gray-900 dark:text-white">Account Status</h2>
+          <div className="mb-8 p-6 bg-white rounded-lg shadow-md border border-gray-200">
+            <h2 className="font-semibold mb-4 text-gray-900">Account Status</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <div className="text-gray-600 dark:text-gray-400">Hosting</div>
+                <div className="text-gray-600">Hosting</div>
                 <div className="font-semibold">
                   {user.has_active_hosting ? '✅ Aktiv' : '❌ Inaktiv'}
                 </div>
               </div>
               <div>
-                <div className="text-gray-600 dark:text-gray-400">Kann veröffentlichen</div>
+                <div className="text-gray-600">Kann veröffentlichen</div>
                 <div className="font-semibold">
                   {user.can_publish ? '✅ Ja' : '❌ Nein'}
                 </div>
@@ -142,7 +142,7 @@ export default function DashboardPage() {
           <h2 className="text-2xl font-bold mb-4">Meine Projekte</h2>
           {projects.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
+              <p className="text-gray-600 mb-4">
                 Noch keine Projekte erstellt
               </p>
               <Link
@@ -157,10 +157,10 @@ export default function DashboardPage() {
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 hover:shadow-lg transition-all hover:border-primary-300 dark:hover:border-primary-600"
+                  className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition-all hover:border-primary-300"
                 >
-                  <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">{project.title}</h3>
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  <h3 className="text-xl font-semibold mb-2 text-gray-900">{project.title}</h3>
+                  <div className="text-sm text-gray-600 mb-4">
                     Status: {project.status} | {project.total_pages} Seiten
                   </div>
                   <div className="flex flex-wrap gap-2">
