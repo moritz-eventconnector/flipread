@@ -20,12 +20,10 @@ try:
         stripe.api_key = settings.STRIPE_SECRET_KEY
         logger.info(f"Stripe API key set successfully on module load (length: {len(stripe.api_key)})")
     else:
-        # Don't set to None - leave it unset to avoid AttributeError when Stripe tries to access it
-        # Setting to None can cause 'NoneType' object has no attribute 'Secret' errors
-        logger.warning("STRIPE_SECRET_KEY is not configured or invalid - Stripe features will be disabled")
-        # Only set to None if stripe.api_key was already set to something
-        if hasattr(stripe, 'api_key') and stripe.api_key is not None:
-            stripe.api_key = None
+        # CRITICAL: Set to a dummy key instead of None to avoid 'NoneType' object has no attribute 'Secret' errors
+        # in some versions of the stripe library when submodules are imported
+        stripe.api_key = "not_configured"
+        logger.warning("STRIPE_SECRET_KEY is not configured or invalid - using dummy key for initialization")
 except Exception as e:
     logger.error(f"Failed to import stripe: {e}", exc_info=True)
     stripe = None
@@ -196,9 +194,13 @@ def get_stripe_webhook():
 def is_stripe_api_key_set():
     """Check if stripe.api_key is set (without raising errors)"""
     try:
-        if stripe is None:
+        if stripe is None or not stripe.api_key:
             return False
-        return bool(stripe.api_key)
+        # Check if it's the dummy key
+        if stripe.api_key == "not_configured":
+            return False
+        # Valid Stripe keys start with sk_
+        return stripe.api_key.startswith('sk_')
     except (AttributeError, NameError):
         return False
 
