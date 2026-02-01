@@ -70,38 +70,39 @@ class MediaStorage(S3Boto3Storage):
         if self.default_acl == 'private':
             try:
                 # Ensure connection is initialized by accessing it
-                # This will trigger S3Boto3Storage to initialize the connection
-                if not hasattr(self, 'connection') or self.connection is None:
-                    # Access bucket_name to trigger connection initialization
+                # S3Boto3Storage.connection is a property that initializes on first access
+                # We need to access it to trigger initialization
+                try:
+                    connection = self.connection
+                except AttributeError:
+                    # Connection property might not be available yet
+                    # Try to access it through the parent class
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning("Connection property not accessible, trying to initialize...")
+                    # Access bucket_name first to ensure settings are loaded
                     _ = self.bucket_name
-                    # Access connection property to force initialization
-                    # This will call S3Boto3Storage.connection which initializes the connection
-                    try:
-                        _ = self.connection
-                    except AttributeError:
-                        # Connection not initialized yet, try to initialize it explicitly
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.warning("Connection not initialized, attempting to initialize...")
-                        # Force initialization by accessing the connection property
-                        # S3Boto3Storage will initialize it on first access
-                        if hasattr(super(), 'connection'):
-                            _ = super().connection
+                    # Now try to access connection again
+                    connection = self.connection
                 
-                # Ensure connection is now available
-                if not hasattr(self, 'connection') or self.connection is None:
-                    raise ValueError("S3 connection is not initialized")
+                if connection is None:
+                    raise ValueError("S3 connection is None after initialization attempt")
                 
                 # Get the S3 client
-                s3_client = self.connection.meta.client
+                s3_client = connection.meta.client
                 
-                # Use the parent's method to normalize the name (handles location prefix correctly)
+                # Normalize the name (handles location prefix correctly)
                 # The name parameter is the relative path stored in the database
-                # Ensure _clean_name and _normalize_name are available
-                if not hasattr(self, '_clean_name') or not hasattr(self, '_normalize_name'):
-                    raise AttributeError("_clean_name or _normalize_name not available - parent class not properly initialized")
+                # Since location = '', we just need to normalize the path
+                # Replace backslashes with forward slashes and remove leading/trailing slashes
+                normalized_name = name.replace('\\', '/').strip('/')
                 
-                normalized_name = self._normalize_name(self._clean_name(name))
+                # Add location prefix if it exists (in our case location = '', so no prefix)
+                if hasattr(self, 'location') and self.location:
+                    # Remove leading/trailing slashes from location
+                    location = self.location.strip('/')
+                    if location:
+                        normalized_name = f"{location}/{normalized_name}".strip('/')
                 
                 # Log for debugging
                 import logging
@@ -197,8 +198,15 @@ class PublishedStorage(S3Boto3Storage):
             # Get the S3 client
             s3_client = self.connection.meta.client
             
-            # Use the parent's method to normalize the name (handles location prefix correctly)
-            normalized_name = self._normalize_name(self._clean_name(name))
+            # Normalize the name (handles location prefix correctly)
+            # Replace backslashes with forward slashes and remove leading/trailing slashes
+            normalized_name = name.replace('\\', '/').strip('/')
+            
+            # Add location prefix if it exists (in our case location = '', so no prefix)
+            if hasattr(self, 'location') and self.location:
+                location = self.location.strip('/')
+                if location:
+                    normalized_name = f"{location}/{normalized_name}".strip('/')
             
             # Log for debugging
             import logging
@@ -245,7 +253,14 @@ class PublishedStorage(S3Boto3Storage):
                 _ = self.bucket_name
             
             s3_client = self.connection.meta.client
-            normalized_name = self._normalize_name(self._clean_name(name))
+            # Normalize the name (handles location prefix correctly)
+            normalized_name = name.replace('\\', '/').strip('/')
+            
+            # Add location prefix if it exists
+            if hasattr(self, 'location') and self.location:
+                location = self.location.strip('/')
+                if location:
+                    normalized_name = f"{location}/{normalized_name}".strip('/')
             
             # Set ACL to public-read
             s3_client.put_object_acl(
