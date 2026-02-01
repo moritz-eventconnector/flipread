@@ -25,13 +25,14 @@ Save findings to `{@artifacts_path}/investigation.md` with:
 - Affected components
 - Proposed solution
 
-### [ ] Step: Implementation
+### [x] Step: Implementation
+<!-- chat-id: 30f41d19-6e2a-4047-b3f0-86a65db45b98 -->
 Read `{@artifacts_path}/investigation.md`
 Implement the bug fix.
 
-1. Add/adjust regression test(s) that fail before the fix and pass after
-2. Implement the fix
-3. Run relevant tests
-4. Update `{@artifacts_path}/investigation.md` with implementation notes and test results
+1. [x] Add/adjust regression test(s) that fail before the fix and pass after
+2. [x] Implement the fix
+3. [x] Run relevant tests
+4. [x] Update `{@artifacts_path}/investigation.md` with implementation notes and test results
 
 If blocked or uncertain, ask the user for direction.

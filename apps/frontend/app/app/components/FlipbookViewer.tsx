@@ -95,7 +95,14 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
   const [showThumbnails, setShowThumbnails] = useState(false)
   const [showNavigation, setShowNavigation] = useState(true)
   const [magnifierActive, setMagnifierActive] = useState(false)
-  const [magnifierPosition, setMagnifierPosition] = useState({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
+  const [magnifierPosition, setMagnifierPosition] = useState({ 
+    x: 0, 
+    y: 0, 
+    mouseX: 0, 
+    mouseY: 0,
+    activeImageUrl: '',
+    pageWidthInContainer: 0
+  })
   const [magnifierZoom, setMagnifierZoom] = useState(2)
   const [downloading, setDownloading] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -562,7 +569,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
   // Handle magnifier mouse move
   const handleMagnifierMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!magnifierActive || !containerRef.current) return
+    if (!magnifierActive || !containerRef.current || !flipbookRef.current) return
 
     const container = containerRef.current
     const rect = container.getBoundingClientRect()
@@ -571,18 +578,60 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
 
     // Check if mouse is over the container
     if (mouseX >= 0 && mouseX <= rect.width && mouseY >= 0 && mouseY <= rect.height) {
-      // Calculate relative position (0-100%)
-      const relativeX = (mouseX / rect.width) * 100
-      const relativeY = (mouseY / rect.height) * 100
+      const flipbook = flipbookRef.current
+      let orientation = 'portrait'
+      try {
+        orientation = flipbook.getOrientation()
+      } catch (err) {
+        orientation = (rect.width > rect.height) ? 'landscape' : 'portrait'
+      }
+      
+      const currentIndex = flipbook.getCurrentPageIndex ? flipbook.getCurrentPageIndex() : currentPage
+      
+      let activeIndex = currentIndex
+      let localX = 0
+      let localY = (mouseY / rect.height) * 100
+      let pageWidthInContainer = rect.width
+
+      if (orientation === 'landscape') {
+        const isSpread = currentIndex > 0 && currentIndex < totalPages - 1
+        
+        if (isSpread) {
+          pageWidthInContainer = rect.width / 2
+          if (mouseX < rect.width / 2) {
+            activeIndex = currentIndex
+            localX = (mouseX / pageWidthInContainer) * 100
+          } else {
+            activeIndex = Math.min(currentIndex + 1, totalPages - 1)
+            localX = ((mouseX - pageWidthInContainer) / pageWidthInContainer) * 100
+          }
+        } else {
+          // Single page (cover or end) usually centered
+          pageWidthInContainer = rect.width / 2
+          const offset = rect.width / 4
+          if (mouseX >= offset && mouseX <= offset + pageWidthInContainer) {
+            localX = ((mouseX - offset) / pageWidthInContainer) * 100
+          } else {
+            setMagnifierPosition({ x: 0, y: 0, mouseX: 0, mouseY: 0, activeImageUrl: '', pageWidthInContainer: 0 })
+            return
+          }
+        }
+      } else {
+        // Portrait mode
+        localX = (mouseX / rect.width) * 100
+        pageWidthInContainer = rect.width
+      }
 
       setMagnifierPosition({
-        x: relativeX,
-        y: relativeY,
+        x: localX,
+        y: localY,
         mouseX: e.clientX,
         mouseY: e.clientY,
+        activeImageUrl: imageUrls[activeIndex] || imageUrls[currentIndex],
+        pageWidthInContainer
       })
     } else {
-      setMagnifierPosition({ x: 0, y: 0, mouseX: 0, mouseY: 0 })
+      setMagnifierPosition({ x: 0, y: 0, mouseX: 0, mouseY: 0, activeImageUrl: '', pageWidthInContainer: 0 })
     }
   }
 
@@ -727,7 +776,7 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
       </div>
 
       {/* Magnifier Lens */}
-      {magnifierActive && imageUrls[currentPage] && magnifierPosition.mouseX > 0 && magnifierPosition.mouseY > 0 && (
+      {magnifierActive && magnifierPosition.activeImageUrl && magnifierPosition.mouseX > 0 && magnifierPosition.mouseY > 0 && (
         <div
           className="magnifier-lens fixed pointer-events-none z-[1000]"
           style={{
@@ -737,9 +786,9 @@ export function FlipbookViewer({ project }: FlipbookViewerProps) {
             border: '3px solid white',
             boxShadow: '0 0 20px rgba(0,0,0,0.5), 0 0 40px rgba(0,0,0,0.3)',
             overflow: 'hidden',
-            backgroundImage: `url(${imageUrls[currentPage]})`,
+            backgroundImage: `url(${magnifierPosition.activeImageUrl})`,
             backgroundRepeat: 'no-repeat',
-            backgroundSize: `${100 / magnifierZoom}%`,
+            backgroundSize: `${(magnifierPosition.pageWidthInContainer * magnifierZoom / 200) * 100}%`,
             backgroundPosition: `${magnifierPosition.x}% ${magnifierPosition.y}%`,
             display: 'block',
             left: `${magnifierPosition.mouseX - 100}px`,

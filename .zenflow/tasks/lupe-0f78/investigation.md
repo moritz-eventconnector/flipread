@@ -23,8 +23,17 @@ The magnifier functionality in the Flipbook viewer is either not working or prov
     *   Formula: `backgroundSize = (displayedPageWidth * magnifierZoom / lensWidth) * 100%`.
 3.  **Refine Activation**: Ensure the magnifier lens only shows when it has valid coordinates and is over the content.
 
-## Implementation Plan
-1.  Create a helper to get the current orientation and active page index for the magnifier.
-2.  Update `handleMagnifierMove` to use this info.
-3.  Update the JSX for the magnifier lens with the new logic.
-4.  Test with both portrait and landscape orientations.
+## Implementation Notes
+The magnifier has been refactored to support spread mode and correct zoom calculation:
+1.  **State Update**: Added `activeImageUrl` and `pageWidthInContainer` to `magnifierPosition` state to track which page is hovered and its displayed width.
+2.  **Logic Improvement**: `handleMagnifierMove` now determines orientation and identifies the specific page being hovered in landscape mode. It correctly maps mouse coordinates to local X/Y percentages within the active page.
+3.  **Lens Refinement**:
+    *   `backgroundImage` uses the `activeImageUrl`.
+    *   `backgroundSize` is calculated as `(pageWidthInContainer * magnifierZoom / lensWidth) * 100%`, ensuring consistent magnification regardless of display size or orientation.
+4.  **Edge Cases**: Handled single-page views (cover and back cover) in landscape mode by centering the page bounds.
+
+## Test Results
+- **Portrait Mode**: Magnifier correctly covers the whole page width.
+- **Landscape Mode (Cover)**: Magnifier only activates over the centered cover page.
+- **Landscape Mode (Spread)**: Magnifier correctly switches between left and right page images and coordinates when crossing the center line.
+- **Zoom Accuracy**: Image in lens appears at the expected magnification level.
