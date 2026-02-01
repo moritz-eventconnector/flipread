@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 try:
     import stripe
     # Set api_key IMMEDIATELY after import, before any submodules are accessed
-    # Check if we have a valid Stripe secret key
+    # For Stripe 7.x+, setting a dummy key helps prevent lazy-loading issues
     if settings.STRIPE_SECRET_KEY and len(settings.STRIPE_SECRET_KEY) > 10 and settings.STRIPE_SECRET_KEY.startswith('sk_'):
         stripe.api_key = settings.STRIPE_SECRET_KEY
         logger.info(f"Stripe API key set successfully on module load (length: {len(stripe.api_key)})")
@@ -24,6 +24,14 @@ try:
         # in some versions of the stripe library when submodules are imported
         stripe.api_key = "not_configured"
         logger.warning("STRIPE_SECRET_KEY is not configured or invalid - using dummy key for initialization")
+    
+    # Force import of submodules that are known to cause issues if lazily loaded without a key
+    try:
+        import stripe.apps
+        import stripe.checkout
+        import stripe.billing_portal
+    except ImportError:
+        pass
 except Exception as e:
     logger.error(f"Failed to import stripe: {e}", exc_info=True)
     stripe = None

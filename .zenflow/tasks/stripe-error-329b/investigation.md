@@ -40,8 +40,9 @@ Specifically, I will modify `stripe_init.py` to:
 ## Implementation Notes
 I have implemented the following changes:
 1.  Modified `apps/backend/billing/stripe_init.py` to set `stripe.api_key` to `"not_configured"` instead of `None` when `STRIPE_SECRET_KEY` is missing or invalid during module load. This prevents the `AttributeError: 'NoneType' object has no attribute 'Secret'` during subsequent submodule imports.
-2.  Updated `is_stripe_api_key_set()` in `stripe_init.py` to return `False` if the key is the dummy `"not_configured"` value or if it doesn't start with the expected `sk_` prefix.
-3.  Ensured that `ensure_stripe_api_key()` correctly validates the key before allowing submodule imports in functions like `get_stripe_checkout_session()`.
+2.  Added explicit imports for `stripe.apps`, `stripe.checkout`, and `stripe.billing_portal` during module load to force proper initialization of these submodules, further preventing lazy-loading related `AttributeError`s.
+3.  Updated `is_stripe_api_key_set()` in `stripe_init.py` to return `False` if the key is the dummy `"not_configured"` value or if it doesn't start with the expected `sk_` prefix.
+4.  Ensured that `ensure_stripe_api_key()` correctly validates the key before allowing submodule imports in functions like `get_stripe_checkout_session()`.
 
 These changes satisfy the requirements of preventing the Stripe library from entering an invalid state while still ensuring that real Stripe operations only proceed with a valid key.
 
